@@ -1,558 +1,415 @@
-/* ================================================
-   PCHAT — Main App Controller
-   ================================================ */
 (async () => {
     'use strict';
 
-    const splash = document.getElementById('splash-screen');
-    const authScr = document.getElementById('auth-screen');
-    const appEl = document.getElementById('app');
-
-    /* ---- Init with timeout ---- */
+    /* ---- Boot ---- */
+    const splash = document.getElementById('splash');
     let logged = false;
     try {
         logged = await Promise.race([
             Auth.init(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000))
+            new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000))
         ]);
-    } catch (e) {
-        console.error('Auth init failed:', e);
-        logged = false;
+    } catch (e) { logged = false }
+
+    await new Promise(r => setTimeout(r, 1400));
+    splash.classList.add('hide');
+    await new Promise(r => setTimeout(r, 500));
+    splash.classList.add('hidden');
+
+    if (logged) {
+        if (Auth.needsOnboarding()) {
+            showOnboarding();
+        } else {
+            startApp();
+        }
+    } else {
+        showAuth();
     }
 
-    // Hide splash
-    setTimeout(() => {
-        splash.classList.add('out');
-        setTimeout(() => {
-            splash.classList.add('hidden');
-            if (logged) {
-                runApp();
-            } else {
-                runAuth();
-            }
-        }, 600);
-    }, 1400);
-
-    function runAuth() {
-        authScr.classList.remove('hidden');
-        appEl.classList.add('hidden');
+    /* ---- Show states ---- */
+    function showAuth() {
+        document.getElementById('auth').classList.remove('hidden');
+        document.getElementById('app').classList.add('hidden');
+        document.getElementById('onboarding').classList.add('hidden');
     }
 
-    function runApp() {
-        authScr.classList.add('hidden');
-        appEl.classList.remove('hidden');
-        refreshUI();
+    function showOnboarding() {
+        document.getElementById('onboarding').classList.remove('hidden');
+        document.getElementById('auth').classList.add('hidden');
+        document.getElementById('app').classList.add('hidden');
+        // Pre-fill name if from Google
+        const p = Auth.profile();
+        if (p?.name) document.getElementById('ob-name').value = p.name;
+    }
+
+    function startApp() {
+        document.getElementById('auth').classList.add('hidden');
+        document.getElementById('onboarding').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        refreshSidebar();
         loadChats();
         Notif.init();
         Contacts.init();
         UI.initEmojiTabs();
     }
 
-    /* ======== AUTH UI ======== */
+    /* ---- ONBOARDING ---- */
+    let unCheckTimeout;
+    document.getElementById('ob-username').addEventListener('input', async e => {
+        const val = e.target.value.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase();
+        e.target.value = val;
+        const check = document.getElementById('ob-username-check');
+        clearTimeout(unCheckTimeout);
+        if (val.length < 3) { check.textContent = 'Минимум 3 символа'; check.className = 'field-check err'; return }
+        check.textContent = 'Проверка...'; check.className = 'field-check';
+        unCheckTimeout = setTimeout(async () => {
+            const ok = await Auth.checkUsername(val);
+            check.textContent = ok ? '✓ Доступен' : '✗ Занят';
+            check.className = 'field-check ' + (ok ? 'ok' : 'err');
+        }, 500);
+    });
 
-    // Toggle forms
-    document.getElementById('to-register').onclick = e => {
-        e.preventDefault();
-        document.getElementById('login-form').classList.add('hidden');
-        document.getElementById('register-form').classList.remove('hidden');
+    document.getElementById('ob-save').onclick = async () => {
+        const name = document.getElementById('ob-name').value.trim();
+        const username = document.getElementById('ob-username').value.trim().toLowerCase();
+        if (!name) return UI.toast('Введите имя');
+        if (username.length < 3) return UI.toast('Юзернейм минимум 3 символа');
+        if (!/^[a-z0-9_]+$/.test(username)) return UI.toast('Только буквы, цифры и _');
+        const ok = await Auth.checkUsername(username);
+        if (!ok) return UI.toast('Этот юзернейм занят');
+        const btn = document.getElementById('ob-save');
+        btn.disabled = true; btn.textContent = 'Сохранение...';
+        try { await Auth.saveOnboarding(name, username); startApp() }
+        catch (e) { UI.toast('Ошибка: ' + e.message); btn.disabled = false; btn.textContent = 'Сохранить и войти' }
     };
 
-    document.getElementById('to-login').onclick = e => {
-        e.preventDefault();
-        document.getElementById('register-form').classList.add('hidden');
-        document.getElementById('login-form').classList.remove('hidden');
-    };
+    /* ---- AUTH FORMS ---- */
+    document.getElementById('to-reg').onclick = e => { e.preventDefault(); document.getElementById('form-login').classList.add('hidden'); document.getElementById('form-reg').classList.remove('hidden') };
+    document.getElementById('to-li').onclick = e => { e.preventDefault(); document.getElementById('form-reg').classList.add('hidden'); document.getElementById('form-login').classList.remove('hidden') };
 
-    // Toggle password visibility
-    document.querySelectorAll('.field-toggle').forEach(b => {
-        b.onclick = () => {
-            const inp = document.getElementById(b.dataset.target);
-            inp.type = inp.type === 'password' ? 'text' : 'password';
-        };
+    // Password toggles
+    document.querySelectorAll('.pw-eye').forEach(b => {
+        b.onclick = () => { const i = document.getElementById(b.dataset.t); i.type = i.type === 'password' ? 'text' : 'password' };
     });
 
     // Password strength
-    const regPwInput = document.getElementById('reg-password');
-    if (regPwInput) {
-        regPwInput.addEventListener('input', e => UI.pwStrength(e.target.value));
-    }
+    document.getElementById('re-pw').addEventListener('input', e => UI.pwStrength(e.target.value));
 
-    // Login
-    document.getElementById('login-btn').onclick = async () => {
-        const email = document.getElementById('login-email').value.trim();
-        const pw = document.getElementById('login-password').value;
+    // Username validation in register
+    let regUnTimeout;
+    document.getElementById('re-username').addEventListener('input', async e => {
+        const val = e.target.value.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase();
+        e.target.value = val;
+        const check = document.getElementById('re-username-check');
+        clearTimeout(regUnTimeout);
+        if (val.length < 3) { check.textContent = 'Минимум 3 символа'; check.className = 'field-check err'; return }
+        check.textContent = 'Проверка...'; check.className = 'field-check';
+        regUnTimeout = setTimeout(async () => {
+            const ok = await Auth.checkUsername(val);
+            check.textContent = ok ? '✓ Доступен' : '✗ Занят';
+            check.className = 'field-check ' + (ok ? 'ok' : 'err');
+        }, 500);
+    });
+
+    // LOGIN
+    document.getElementById('li-btn').onclick = async () => {
+        const email = document.getElementById('li-email').value.trim();
+        const pw = document.getElementById('li-pw').value;
         if (!email || !pw) return UI.toast('Заполните все поля');
-
-        const btn = document.getElementById('login-btn');
-        setLoading(btn, true);
-        try {
-            await Auth.login(email, pw);
-            runApp();
-        } catch (e) {
-            UI.toast(Auth.errMsg(e));
-        } finally {
-            setLoading(btn, false);
-        }
+        const btn = document.getElementById('li-btn');
+        setLoad(btn, true);
+        try { await Auth.login(email, pw); startApp() }
+        catch (e) { UI.toast(Auth.errMsg(e)) }
+        finally { setLoad(btn, false) }
     };
 
-    // Register
-    document.getElementById('register-btn').onclick = async () => {
-        const name = document.getElementById('reg-name').value.trim();
-        const email = document.getElementById('reg-email').value.trim();
-        const pw = document.getElementById('reg-password').value;
-        const conf = document.getElementById('reg-confirm').value;
-
-        if (!name || !email || !pw) return UI.toast('Заполните все поля');
+    // REGISTER
+    document.getElementById('re-btn').onclick = async () => {
+        const name = document.getElementById('re-name').value.trim();
+        const username = document.getElementById('re-username').value.trim().toLowerCase();
+        const email = document.getElementById('re-email').value.trim();
+        const pw = document.getElementById('re-pw').value;
+        const pw2 = document.getElementById('re-pw2').value;
+        if (!name || !username || !email || !pw) return UI.toast('Заполните все поля');
+        if (username.length < 3) return UI.toast('Юзернейм минимум 3 символа');
+        if (!/^[a-z0-9_]+$/.test(username)) return UI.toast('Юзернейм: только буквы, цифры и _');
         if (pw.length < 8) return UI.toast('Пароль минимум 8 символов');
-        if (pw !== conf) return UI.toast('Пароли не совпадают');
-
-        const btn = document.getElementById('register-btn');
-        setLoading(btn, true);
-        try {
-            await Auth.register(email, pw, name);
-            runApp();
-        } catch (e) {
-            UI.toast(Auth.errMsg(e));
-        } finally {
-            setLoading(btn, false);
-        }
+        if (pw !== pw2) return UI.toast('Пароли не совпадают');
+        const unOk = await Auth.checkUsername(username);
+        if (!unOk) return UI.toast('Юзернейм занят');
+        const btn = document.getElementById('re-btn');
+        setLoad(btn, true);
+        try { await Auth.register(email, pw, name, username); startApp() }
+        catch (e) { UI.toast(Auth.errMsg(e)) }
+        finally { setLoad(btn, false) }
     };
 
-    // Google login
-    document.getElementById('google-btn').onclick = async () => {
+    // GOOGLE
+    document.getElementById('li-google').onclick = async () => {
         try {
             await Auth.google();
-            runApp();
-        } catch (e) {
-            UI.toast(Auth.errMsg(e));
-        }
+            if (Auth.needsOnboarding()) showOnboarding();
+            else startApp();
+        } catch (e) { UI.toast(Auth.errMsg(e)) }
     };
 
-    function setLoading(btn, on) {
+    function setLoad(btn, on) {
         btn.disabled = on;
-        const text = btn.querySelector('.btn-text');
-        const loader = btn.querySelector('.btn-loader');
-        if (text) text.classList.toggle('hidden', on);
-        if (loader) loader.classList.toggle('hidden', !on);
+        btn.querySelector('span').classList.toggle('hidden', on);
+        btn.querySelector('.btn-spin').classList.toggle('hidden', !on);
     }
 
-    /* ======== USER UI ======== */
-
-    function refreshUI() {
-        const p = Auth.profile();
-        if (!p) return;
+    /* ---- SIDEBAR / UI ---- */
+    function refreshSidebar() {
+        const p = Auth.profile(); if (!p) return;
         const ini = (p.name || 'P')[0].toUpperCase();
-
-        // Drawer
-        document.getElementById('drawer-avatar').textContent = ini;
-        document.getElementById('drawer-name').textContent = p.name || 'User';
-        document.getElementById('drawer-email').textContent = p.email || '';
-
+        const bg = UI.avatarBg(p.name || '');
+        document.getElementById('sf-avatar').textContent = ini;
+        document.getElementById('sf-avatar').style.background = bg;
+        document.getElementById('sf-name').textContent = p.name || 'User';
+        document.getElementById('sf-username').textContent = p.username ? '@' + p.username : p.email || '';
         // Settings
-        document.getElementById('settings-avatar-char').textContent = ini;
-        document.getElementById('settings-user-name').textContent = p.name || 'User';
-        document.getElementById('settings-user-email').textContent = p.email || '';
-        document.getElementById('sv-name').textContent = p.name || '—';
-        document.getElementById('sv-bio').textContent = p.bio || 'Не указано';
-
-        // Key fingerprint
-        if (Auth.pubKey()) {
-            Crypto.fingerprint(Auth.pubKey()).then(f => {
-                document.getElementById('sv-fingerprint').textContent = f;
-            });
-        }
+        const sa = document.getElementById('settings-avatar');
+        sa.textContent = ini; sa.style.background = bg;
+        document.getElementById('set-name-val').textContent = p.name || 'User';
+        document.getElementById('set-un-val').textContent = p.username ? '@' + p.username : '—';
+        document.getElementById('set-email-val').textContent = p.email || '';
+        document.getElementById('set-name-v').textContent = p.name || '—';
+        document.getElementById('set-un-v').textContent = p.username ? '@' + p.username : '—';
+        document.getElementById('set-bio-v').textContent = p.bio || 'Не указано';
+        if (Auth.pubKey()) Crypto.fingerprint(Auth.pubKey()).then(f => document.getElementById('key-fp').textContent = f);
     }
 
-    /* ======== CHAT LIST ======== */
-
-    let _chatUnsub = null;
-
+    /* ---- CHAT LIST ---- */
+    let _unsub;
     function loadChats() {
         const me = Auth.user().uid;
         const list = document.getElementById('chat-list');
         const empty = document.getElementById('empty-chats');
-
-        if (_chatUnsub) _chatUnsub();
-
-        _chatUnsub = db.collection('chats')
+        if (_unsub) _unsub();
+        _unsub = db.collection('chats')
             .where('participants', 'array-contains', me)
             .orderBy('lastMessageTime', 'desc')
             .onSnapshot(snap => {
-                // Clear list but keep empty element
                 list.innerHTML = '';
-
-                if (snap.empty) {
-                    list.appendChild(empty);
-                    empty.classList.remove('hidden');
-                    return;
-                }
-
+                if (snap.empty) { list.appendChild(empty); empty.classList.remove('hidden'); return }
                 empty.classList.add('hidden');
-
-                snap.forEach(doc => {
-                    const c = doc.data();
-                    const cid = doc.id;
-                    const pid = c.participants.find(p => p !== me);
-                    const pname = c.names?.[pid] || 'User';
-                    const pemail = c.emails?.[pid] || '';
-                    const unread = c[`unread_${me}`] || 0;
-                    list.appendChild(makeChatRow(cid, pid, pname, pemail, c, unread));
-                });
-            }, error => {
-                console.error('Chat list error:', error);
-                // If index not ready, show message
-                if (error.code === 'failed-precondition') {
-                    UI.toast('Создаётся индекс базы данных. Подождите 2-3 минуты и обновите страницу.');
-                }
+                snap.forEach(doc => list.appendChild(makeChatRow(doc.id, doc.data())));
+            }, err => {
+                if (err.code === 'failed-precondition') UI.toast('⏳ Создаётся индекс БД. Подождите 2 мин.');
             });
     }
 
-    function makeChatRow(cid, pid, name, email, chat, unread) {
+    let activeChatId = null;
+
+    function makeChatRow(cid, c) {
+        const me = Auth.user().uid;
+        const pid = c.participants.find(p => p !== me);
+        const name = c.names?.[pid] || 'User';
+        const username = c.usernames?.[pid];
+        const unread = c[`unread_${me}`] || 0;
+        const msg = c.lastMessage || 'Начните диалог';
+        const time = c.lastMessageTime ? UI.fmtDate(c.lastMessageTime) : '';
+
         const el = document.createElement('div');
-        el.className = 'chat-row';
-        el.dataset.chatId = cid;
+        el.className = 'chat-row' + (cid === activeChatId ? ' active' : '');
+        el.dataset.cid = cid;
         const ini = (name || 'U')[0].toUpperCase();
         const bg = UI.avatarBg(name);
-        const msg = chat.lastMessage || 'Начните диалог';
-        const time = chat.lastMessageTime ? UI.fmtDate(chat.lastMessageTime) : '';
         const badge = unread > 0 ? `<span class="chat-row-badge">${unread > 99 ? '99+' : unread}</span>` : '';
 
         el.innerHTML = `
-            <div class="peer-avatar" style="background:${bg}">${ini}</div>
+            <div class="chat-row-av" style="background:${bg}">
+                ${ini}
+            </div>
             <div class="chat-row-body">
                 <div class="chat-row-top">
                     <span class="chat-row-name">${UI.esc(name)}</span>
                     <span class="chat-row-time">${time}</span>
                 </div>
                 <div class="chat-row-bottom">
-                    <span class="chat-row-msg">${UI.esc(msg)}</span>
+                    <span class="chat-row-preview">${UI.esc(msg)}</span>
                     ${badge}
                 </div>
             </div>`;
 
         el.onclick = async () => {
             UI.haptic('light');
+            document.querySelectorAll('.chat-row').forEach(r => r.classList.remove('active'));
+            el.classList.add('active');
+            activeChatId = cid;
+
             try {
                 const pdoc = await db.collection('users').doc(pid).get();
-                Chat.open(cid, pid, pdoc.exists ? pdoc.data() : { name, email });
-                UI.show('chat-screen');
-            } catch (e) {
-                console.error('Open chat error:', e);
-                UI.toast('Ошибка открытия чата');
-            }
+                const pdata = pdoc.exists ? pdoc.data() : { name, email: c.emails?.[pid] || '' };
+                Chat.open(cid, pid, pdata);
+                UI.showChat();
+                if (window.innerWidth <= 768) UI.closeSidebar();
+            } catch (e) { UI.toast('Ошибка открытия чата') }
         };
-
-        if (unread > 0 && !document.hasFocus()) {
-            Notif.show(name, msg);
-            Notif.sound();
-        }
         return el;
     }
 
-    /* ======== NAVIGATION ======== */
+    /* ---- NAVIGATION ---- */
+    // Mobile: header burger button (add dynamically)
+    const mobileHead = document.createElement('button');
+    mobileHead.className = 'icon-btn mobile-only';
+    mobileHead.style.cssText = 'position:fixed;top:calc(12px + env(safe-area-inset-top));left:14px;z-index:150;background:var(--bg1);border:1px solid var(--border2);border-radius:10px;';
+    mobileHead.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>';
+    mobileHead.onclick = UI.openSidebar;
+    document.getElementById('app').appendChild(mobileHead);
 
-    // Menu / Drawer
-    document.getElementById('menu-btn').onclick = () => {
-        UI.haptic('light');
-        UI.openDrawer();
-    };
-    document.getElementById('drawer-overlay').onclick = UI.closeDrawer;
+    document.getElementById('mob-overlay').onclick = UI.closeSidebar;
+    document.getElementById('mob-fab').onclick = () => document.getElementById('new-chat-modal').classList.remove('hidden');
+    document.getElementById('new-chat-btn').onclick = () => document.getElementById('new-chat-modal').classList.remove('hidden');
+    document.getElementById('new-chat-close').onclick = () => document.getElementById('new-chat-modal').classList.add('hidden');
+    document.getElementById('new-chat-modal').onclick = e => { if (e.target === e.currentTarget) document.getElementById('new-chat-modal').classList.add('hidden') };
 
-    // New chat
-    document.getElementById('fab').onclick = () => UI.show('contacts-screen');
-
-    // Back buttons
-    document.getElementById('back-btn').onclick = () => {
+    document.getElementById('mobile-back').onclick = () => {
         Chat.close();
-        UI.show('chat-list-screen');
-    };
-    document.getElementById('contacts-back').onclick = () => UI.show('chat-list-screen');
-    document.getElementById('settings-back').onclick = () => UI.show('chat-list-screen');
-
-    // Drawer items
-    document.getElementById('dr-contacts').onclick = () => {
-        UI.closeDrawer();
-        UI.show('contacts-screen');
-    };
-    document.getElementById('dr-settings').onclick = () => {
-        UI.closeDrawer();
-        refreshUI();
-        UI.show('settings-screen');
-    };
-    document.getElementById('dr-invite').onclick = () => {
-        UI.closeDrawer();
-        if (navigator.share) {
-            navigator.share({
-                title: 'PCHAT',
-                text: 'Присоединяйся к PCHAT — приватный мессенджер с шифрованием!',
-                url: location.href
-            });
-        } else {
-            navigator.clipboard.writeText(location.href);
-            UI.toast('Ссылка скопирована');
-        }
+        UI.hideChat();
+        activeChatId = null;
+        document.querySelectorAll('.chat-row').forEach(r => r.classList.remove('active'));
     };
 
-    // Search
-    document.getElementById('search-btn').onclick = () => {
-        const p = document.getElementById('search-panel');
-        p.classList.toggle('collapsed');
-        p.classList.toggle('expanded');
-        if (p.classList.contains('expanded')) {
-            document.getElementById('search-input').focus();
-        }
+    document.getElementById('sf-settings-btn').onclick = () => {
+        refreshSidebar();
+        document.getElementById('settings-modal').classList.remove('hidden');
     };
-
-    document.getElementById('search-clear').onclick = () => {
-        document.getElementById('search-input').value = '';
-        document.getElementById('search-panel').classList.add('collapsed');
-        document.getElementById('search-panel').classList.remove('expanded');
-        document.querySelectorAll('.chat-row').forEach(r => r.style.display = '');
+    document.getElementById('sf-user-btn').onclick = () => {
+        refreshSidebar();
+        document.getElementById('settings-modal').classList.remove('hidden');
     };
+    document.getElementById('settings-close').onclick = () => document.getElementById('settings-modal').classList.add('hidden');
+    document.getElementById('settings-modal').onclick = e => { if (e.target === e.currentTarget) document.getElementById('settings-modal').classList.add('hidden') };
 
-    document.getElementById('search-input').addEventListener('input', e => {
+    /* ---- CHAT SEARCH ---- */
+    document.getElementById('chat-search').addEventListener('input', e => {
         const q = e.target.value.toLowerCase();
         document.querySelectorAll('.chat-row').forEach(r => {
             const n = r.querySelector('.chat-row-name')?.textContent.toLowerCase() || '';
-            const m = r.querySelector('.chat-row-msg')?.textContent.toLowerCase() || '';
-            r.style.display = (n.includes(q) || m.includes(q)) ? '' : 'none';
+            r.style.display = n.includes(q) ? '' : 'none';
         });
     });
 
-    /* ======== MESSAGE INPUT ======== */
-
-    const msgInput = document.getElementById('msg-input');
-
-    msgInput.addEventListener('input', () => {
-        UI.autoResize(msgInput);
-        UI.updateSend();
-        Chat.handleTyping();
-    });
-
-    msgInput.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && !e.shiftKey) {
+    /* ---- MESSAGE INPUT ---- */
+    const msgInp = document.getElementById('msg-input');
+    msgInp.addEventListener('input', () => { UI.autoResize(msgInp); UI.updateSend(); Chat.handleTyping() });
+    msgInp.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey && window.innerWidth > 768) {
             e.preventDefault();
-            if (msgInput.value.trim()) {
-                Chat.send(msgInput.value.trim());
-            }
+            if (msgInp.value.trim()) Chat.send(msgInp.value.trim());
         }
     });
+    document.getElementById('send-btn').onclick = () => { if (msgInp.value.trim()) { UI.haptic('light'); Chat.send(msgInp.value.trim()) } };
 
-    document.getElementById('send-btn').onclick = () => {
-        if (msgInput.value.trim()) {
-            UI.haptic('light');
-            Chat.send(msgInput.value.trim());
-        }
-    };
-
-    /* ======== EMOJI ======== */
-
+    /* ---- EMOJI ---- */
     document.getElementById('emoji-btn').onclick = () => {
-        const p = document.getElementById('emoji-panel');
-        p.classList.toggle('hidden');
-        if (!p.classList.contains('hidden')) {
-            UI.renderEmojis('😊');
-            document.getElementById('attach-popup').classList.add('hidden');
-        }
+        document.getElementById('emoji-panel').classList.toggle('hidden');
+        document.getElementById('attach-panel').classList.add('hidden');
     };
 
-    /* ======== ATTACHMENTS ======== */
-
+    /* ---- ATTACH ---- */
     document.getElementById('attach-btn').onclick = () => {
-        document.getElementById('attach-popup').classList.toggle('hidden');
+        document.getElementById('attach-panel').classList.toggle('hidden');
         document.getElementById('emoji-panel').classList.add('hidden');
     };
-
-    document.querySelectorAll('.attach-opt').forEach(b => {
+    document.querySelectorAll('.attach-item').forEach(b => {
         b.onclick = () => {
-            document.getElementById('attach-popup').classList.add('hidden');
+            document.getElementById('attach-panel').classList.add('hidden');
             const t = b.dataset.type;
             if (t === 'photo') document.getElementById('photo-pick').click();
             else if (t === 'file') document.getElementById('file-pick').click();
-            else if (t === 'location') sendLocation();
-        };
-    });
-
-    document.getElementById('photo-pick').onchange = e => {
-        if (e.target.files[0]) {
-            Chat.sendFile(e.target.files[0]);
-            e.target.value = '';
-        }
-    };
-
-    document.getElementById('file-pick').onchange = e => {
-        if (e.target.files[0]) {
-            Chat.sendFile(e.target.files[0]);
-            e.target.value = '';
-        }
-    };
-
-    function sendLocation() {
-        if (!navigator.geolocation) return UI.toast('Геолокация не поддерживается');
-        UI.toast('📍 Получение геопозиции...');
-        navigator.geolocation.getCurrentPosition(
-            p => Chat.send(`📍 https://maps.google.com/maps?q=${p.coords.latitude},${p.coords.longitude}`),
-            () => UI.toast('Не удалось получить геопозицию'),
-            { enableHighAccuracy: true }
-        );
-    }
-
-    /* ======== CONTEXT MENU ======== */
-
-    document.querySelectorAll('.ctx-item').forEach(b => {
-        b.onclick = () => {
-            const m = document.getElementById('ctx-menu');
-            const action = b.dataset.action;
-            const mid = m.dataset.msgId;
-            const txt = m.dataset.msgText;
-            UI.hideCtx();
-
-            switch (action) {
-                case 'copy':
-                    Chat.copy(txt);
-                    break;
-                case 'delete':
-                    Chat.del(mid);
-                    break;
-                case 'reply':
-                    msgInput.placeholder = `↩ ${txt.substring(0, 30)}...`;
-                    msgInput.focus();
-                    break;
+            else if (t === 'location') {
+                if (!navigator.geolocation) return UI.toast('Не поддерживается');
+                UI.toast('📍 Определение...');
+                navigator.geolocation.getCurrentPosition(
+                    p => Chat.send(`📍 https://maps.google.com/maps?q=${p.coords.latitude},${p.coords.longitude}`),
+                    () => UI.toast('Не удалось')
+                );
             }
         };
     });
+    document.getElementById('photo-pick').onchange = e => { if (e.target.files[0]) { Chat.sendFile(e.target.files[0]); e.target.value = '' } };
+    document.getElementById('file-pick').onchange = e => { if (e.target.files[0]) { Chat.sendFile(e.target.files[0]); e.target.value = '' } };
 
-    // Close context menu and attach popup on outside click
-    document.addEventListener('click', e => {
-        if (!e.target.closest('.ctx-menu') && !e.target.closest('.msg')) {
+    /* ---- CONTEXT MENU ---- */
+    document.querySelectorAll('.ctx-btn').forEach(b => {
+        b.onclick = () => {
+            const m = document.getElementById('ctx');
+            const a = b.dataset.a, mid = m.dataset.mid, txt = m.dataset.txt;
             UI.hideCtx();
-        }
-        if (!e.target.closest('.attach-popup') && !e.target.closest('#attach-btn')) {
-            document.getElementById('attach-popup').classList.add('hidden');
-        }
+            if (a === 'copy') Chat.copy(txt);
+            else if (a === 'delete') Chat.del(mid);
+            else if (a === 'reply') { msgInp.placeholder = `↩ ${txt.substring(0, 30)}...`; msgInp.focus() }
+        };
+    });
+    document.addEventListener('click', e => {
+        if (!e.target.closest('.ctx') && !e.target.closest('.msg-bub')) UI.hideCtx();
+        if (!e.target.closest('.attach-panel') && !e.target.closest('#attach-btn')) document.getElementById('attach-panel').classList.add('hidden');
     });
 
-    /* ======== LIGHTBOX ======== */
+    /* ---- LIGHTBOX ---- */
+    document.getElementById('lb-close').onclick = UI.closeLightbox;
+    document.getElementById('lightbox').onclick = e => { if (e.target === e.currentTarget) UI.closeLightbox() };
 
-    document.querySelector('.lightbox-close').onclick = UI.closeLightbox;
-    document.getElementById('lightbox').onclick = e => {
-        if (e.target === e.currentTarget) UI.closeLightbox();
-    };
-
-    /* ======== SETTINGS ======== */
-
-    // Edit name
-    document.getElementById('set-name').onclick = async () => {
+    /* ---- SETTINGS ---- */
+    document.getElementById('edit-name-btn').onclick = async () => {
         const v = await UI.prompt('Изменить имя', 'Новое имя', Auth.profile().name);
-        if (v) {
-            await Auth.update({ name: v });
-            refreshUI();
-            UI.toast('✅ Имя обновлено');
-        }
+        if (v) { await Auth.update({ name: v }); refreshSidebar(); UI.toast('✅ Имя обновлено') }
     };
 
-    // Edit bio
-    document.getElementById('set-bio').onclick = async () => {
+    document.getElementById('edit-username-btn').onclick = async () => {
+        const current = Auth.profile().username || '';
+        const v = await UI.prompt('Изменить юзернейм', '@username', current);
+        if (!v) return;
+        const clean = v.replace(/^@/, '').toLowerCase();
+        if (clean.length < 3) return UI.toast('Минимум 3 символа');
+        if (!/^[a-z0-9_]+$/.test(clean)) return UI.toast('Только буквы, цифры и _');
+        const ok = await Auth.checkUsername(clean);
+        if (!ok && clean !== current) return UI.toast('Юзернейм занят');
+        await Auth.update({ username: clean });
+        await db.collection('usernames').doc(clean).set({ uid: Auth.user().uid });
+        refreshSidebar(); UI.toast('✅ Юзернейм обновлён');
+    };
+
+    document.getElementById('edit-bio-btn').onclick = async () => {
         const v = await UI.prompt('О себе', 'Расскажите о себе', Auth.profile().bio || '');
-        if (v !== null) {
-            await Auth.update({ bio: v });
-            refreshUI();
-            UI.toast('✅ Сохранено');
-        }
+        if (v !== null) { await Auth.update({ bio: v }); refreshSidebar(); UI.toast('✅ Сохранено') }
     };
 
-    // Regenerate keys
-    document.getElementById('set-regen-keys').onclick = async () => {
-        const ok = await UI.modal(
-            'Пересоздать ключи?',
-            '<p>Старые зашифрованные сообщения могут стать недоступны.</p>',
-            'Пересоздать'
-        );
-        if (ok) {
-            await Auth.regenKeys();
-            refreshUI();
-        }
+    document.getElementById('theme-tog').onchange = e => {
+        const t = e.target.checked ? 'dark' : 'light';
+        document.documentElement.dataset.theme = t;
+        localStorage.setItem('pchat-theme', t);
     };
-
-    // Theme toggle
-    const themeToggle = document.getElementById('tog-theme');
     const savedTheme = localStorage.getItem('pchat-theme') || 'dark';
     document.documentElement.dataset.theme = savedTheme;
-    themeToggle.checked = savedTheme === 'dark';
+    document.getElementById('theme-tog').checked = savedTheme === 'dark';
 
-    themeToggle.onchange = () => {
-        const theme = themeToggle.checked ? 'dark' : 'light';
-        document.documentElement.dataset.theme = theme;
-        localStorage.setItem('pchat-theme', theme);
-    };
-
-    // Sound toggle
-    document.getElementById('tog-sound').onchange = e => {
-        localStorage.setItem('pchat-sound', e.target.checked);
-    };
-
-    // Logout
     document.getElementById('logout-btn').onclick = async () => {
-        const ok = await UI.modal('Выйти из PCHAT?', '', 'Выйти');
-        if (ok) {
+        document.getElementById('settings-modal').classList.add('hidden');
+        if (await UI.modal('Выйти?', '', 'Выйти', 'Отмена')) {
             await Auth.logout();
-            runAuth();
+            showAuth();
         }
     };
 
-    // Delete account
-    document.getElementById('set-delete-account').onclick = async () => {
-        const ok = await UI.modal(
-            '⚠️ Удалить аккаунт?',
-            '<p style="color:var(--red)">Все данные будут удалены навсегда. Это нельзя отменить!</p>',
-            'Удалить навсегда'
-        );
-        if (ok) {
-            try {
-                const uid = Auth.user().uid;
-                await db.collection('users').doc(uid).delete();
-                await Auth.user().delete();
-                runAuth();
-                UI.toast('Аккаунт удалён');
-            } catch (e) {
-                UI.toast('Ошибка: ' + e.message);
-            }
-        }
-    };
-
-    /* ======== MOBILE BACK BUTTON ======== */
-
+    /* ---- MOBILE BACK (browser) ---- */
     window.addEventListener('popstate', () => {
-        const chatScreen = document.getElementById('chat-screen');
-        const contactsScreen = document.getElementById('contacts-screen');
-        const settingsScreen = document.getElementById('settings-screen');
-
-        if (!chatScreen.classList.contains('hidden')) {
-            Chat.close();
-            UI.show('chat-list-screen');
-        } else if (!contactsScreen.classList.contains('hidden')) {
-            UI.show('chat-list-screen');
-        } else if (!settingsScreen.classList.contains('hidden')) {
-            UI.show('chat-list-screen');
+        if (!document.getElementById('chat-view').classList.contains('hidden')) {
+            Chat.close(); UI.hideChat();
         }
     });
 
-    /* ======== KEYBOARD FIX ======== */
-
+    /* ---- KEYBOARD FIX ---- */
     if ('visualViewport' in window) {
         window.visualViewport.addEventListener('resize', () => {
-            const s = document.getElementById('messages-scroll');
+            const s = document.getElementById('msgs-scroll');
             if (s) s.scrollTop = s.scrollHeight;
         });
     }
 
-    /* ======== SERVICE WORKER ======== */
-
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js').catch(err => {
-            console.log('SW registration skipped:', err);
-        });
-    }
-
-    console.log('%c🔒 PCHAT Ready', 'color:#667eea;font-weight:bold;font-size:14px');
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+    console.log('%c🔒 PCHAT 2.0', 'color:#818cf8;font-weight:800;font-size:16px');
 })();
