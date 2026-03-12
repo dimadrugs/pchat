@@ -9,7 +9,16 @@
     const appEl = document.getElementById('app');
 
     /* ---- Init ---- */
-    const logged = await Auth.init();
+    let logged = false;
+try {
+    logged = await Promise.race([
+        Auth.init(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000))
+    ]);
+} catch (e) {
+    console.error('Auth init failed:', e);
+    logged = false;
+}
     setTimeout(() => {
         splash.classList.add('out');
         setTimeout(() => { splash.classList.add('hidden'); logged ? runApp() : runAuth() }, 600);
@@ -309,4 +318,5 @@
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 
     console.log('%c🔒 PCHAT Ready', 'color:#667eea;font-weight:bold;font-size:14px');
+
 })();
