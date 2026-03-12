@@ -40,18 +40,10 @@ const Chat = (() => {
         }
         UI.updateSend();
 
-        try { await setupE2E(chatId, peerId); } catch (e) { console.warn('E2E Setup warning:', e); }
-
         listenMessages(chatId);
         watchStatus(peerId);
         watchTyping(chatId, peerId);
         markRead(chatId);
-    };
-
-    const setupE2E = async (chatId, peerId) => {
-        const pdoc = await db.collection('users').doc(peerId).get();
-        if (!pdoc.exists || !pdoc.data().publicKey) throw new Error('No peer key');
-        await Crypto.getSharedKey(chatId, Auth.keyPair().privateKey, pdoc.data().publicKey);
     };
 
     const send = async (text, type = 'text', meta = {}) => {
@@ -68,26 +60,12 @@ const Chat = (() => {
         UI.updateSend();
 
         try {
-            let ct = text;
-            let enc = false;
-
-            try {
-                const pdoc = await db.collection('users').doc(_pid).get();
-                if (pdoc.exists && pdoc.data().publicKey) {
-                    const key = await Crypto.getSharedKey(
-                        _cid, Auth.keyPair().privateKey, pdoc.data().publicKey
-                    );
-                    ct = await Crypto.encrypt(text, key);
-                    enc = true;
-                }
-            } catch (e) { console.warn('Encrypt failed:', e); }
-
             await db.collection('chats').doc(_cid)
                 .collection('messages').add({
                     senderId: me,
-                    text: ct,
+                    text: text, 
                     type,
-                    encrypted: enc,
+                    encrypted: false,
                     timestamp: firebase.firestore.FieldValue.serverTimestamp(),
                     status: 'sent',
                     ...meta
@@ -123,23 +101,15 @@ const Chat = (() => {
             if (!me) return;
             const ext = file.name.split('.').pop();
             const path = `chats/${_cid}/${Date.now()}.${ext}`;
-            const ab = await file.arrayBuffer();
-            let uploadData = ab, fenc = false;
-            try {
-                const pdoc = await db.collection('users').doc(_pid).get();
-                if (pdoc.exists && pdoc.data().publicKey) {
-                    const key = await Crypto.getSharedKey(_cid, Auth.keyPair().privateKey, pdoc.data().publicKey);
-                    uploadData = await Crypto.encryptFile(ab, key);
-                    fenc = true;
-                }
-            } catch (e) { console.warn('File encrypt failed:', e); }
+            
             const ref = storage.ref(path);
-            const snap = await ref.put(new Blob([uploadData]));
+            const snap = await ref.put(file);
             const url = await snap.ref.getDownloadURL();
+            
             const isImg = file.type.startsWith('image/');
             await send(isImg ? '📷 Фото' : `📎 ${file.name}`, isImg ? 'image' : 'file', {
                 fileURL: url, fileName: file.name,
-                fileSize: file.size, fileType: file.type, fileEncrypted: fenc
+                fileSize: file.size, fileType: file.type, fileEncrypted: false
             });
             UI.toast('✅ Отправлено');
         } catch (e) {
@@ -158,7 +128,7 @@ const Chat = (() => {
             .collection('messages')
             .orderBy('timestamp', 'asc')
             .onSnapshot(snap => {
-                snap.docChanges().forEach(async change => {
+                snap.docChanges().forEach(change => {
                     if (change.type === 'added') {
                         const m = change.doc.data();
                         const id = change.doc.id;
@@ -175,27 +145,7 @@ const Chat = (() => {
                             }
                         }
 
-                        let txt = m.text;
-                        let decryptFailed = false;
-
-                        if (m.encrypted && _pid) {
-                            try {
-                                const pdoc = await db.collection('users').doc(_pid).get();
-                                if (pdoc.exists && pdoc.data().publicKey) {
-                                    const key = await Crypto.getSharedKey(
-                                        chatId, Auth.keyPair().privateKey, pdoc.data().publicKey
-                                    );
-                                    txt = await Crypto.decrypt(m.text, key);
-                                } else {
-                                    throw new Error("No public key");
-                                }
-                            } catch (e) { 
-                                decryptFailed = true;
-                                txt = '';
-                            }
-                        }
-
-                        const el = makeMsgEl(id, m, txt, decryptFailed);
+                        const el = makeMsgEl(id, m, m.text);
                         msgsEl?.appendChild(el);
 
                         requestAnimationFrame(() => {
@@ -206,10 +156,8 @@ const Chat = (() => {
                         if (m.senderId !== me) {
                             markMsgRead(chatId, id);
                             
-                            // Запускаем пуш и звук
-                            let notifText = txt || 'Новое сообщение';
-                            if (decryptFailed) notifText = '🔒 Сообщение недоступно';
-                            else if (m.type === 'voice') notifText = '🎤 Голосовое сообщение';
+                            let notifText = m.text || 'Новое сообщение';
+                            if (m.type === 'voice') notifText = '🎤 Голосовое сообщение';
                             else if (m.type === 'image') notifText = '📷 Фотография';
                             else if (m.type === 'file') notifText = '📎 Файл';
 
@@ -229,7 +177,7 @@ const Chat = (() => {
             });
     };
 
-    const makeMsgEl = (id, m, txt, decryptFailed = false) => {
+    const makeMsgEl = (id, m, txt) => {
         const me = Auth.user()?.uid;
         const mine = m.senderId === me;
 
@@ -245,14 +193,7 @@ const Chat = (() => {
         let content = '';
         let isImgOnly = false;
 
-        if (decryptFailed) {
-            content = `
-            <div class="msg-decryption-error">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                <span>Сообщение недоступно (изменились ключи)</span>
-            </div>`;
-        } 
-        else if (m.type === 'voice' && m.fileURL) {
+        if (m.type === 'voice' && m.fileURL) {
             const bub = document.createElement('div');
             bub.className = 'msg-bub';
             
@@ -293,9 +234,7 @@ const Chat = (() => {
             </div>
         </div>`;
 
-        if (!decryptFailed) {
-            addLongPress(wrap, id, txt, m.senderId);
-        }
+        addLongPress(wrap, id, txt, m.senderId);
 
         const img = wrap.querySelector('.msg-img');
         if (img) img.addEventListener('click', () => UI.openLightbox(img.src));
