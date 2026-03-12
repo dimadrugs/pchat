@@ -1,6 +1,3 @@
-/* ================================================
-   PCHAT — Notifications
-   ================================================ */
 const Notif = (() => {
     const init = () => {
         if ('Notification' in window && Notification.permission === 'default') {
@@ -10,7 +7,10 @@ const Notif = (() => {
 
     const show = (title, body) => {
         if (!('Notification' in window) || Notification.permission !== 'granted' || document.hasFocus()) return;
-        const n = new Notification(title, { body, icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%23667eea"/><text x="50" y="65" font-size="40" text-anchor="middle" fill="white" font-weight="bold">PC</text></svg>', vibrate: [100, 50, 100], tag: 'pchat', renotify: true });
+        const n = new Notification(title, { 
+            body, 
+            icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%23818cf8"/><text x="50" y="62" text-anchor="middle" font-size="40" font-weight="800" fill="white" font-family="sans-serif">P</text></svg>' 
+        });
         n.onclick = () => { window.focus(); n.close() };
         setTimeout(() => n.close(), 5000);
     };
