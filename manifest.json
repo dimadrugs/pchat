@@ -1,0 +1,20 @@
+{
+    "name": "PCHAT",
+    "short_name": "PCHAT",
+    "description": "Приватный мессенджер с E2E шифрованием",
+    "start_url": "/",
+    "display": "standalone",
+    "orientation": "portrait",
+    "background_color": "#08080f",
+    "theme_color": "#0e0e1a",
+    "icons": [
+        {
+            "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23667eea'/><text x='50' y='65' font-size='36' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'>PC</text></svg>",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
+        }
+    ],
+    "categories": ["social", "communication"],
+    "lang": "ru"
+}
