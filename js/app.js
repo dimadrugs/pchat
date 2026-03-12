@@ -220,9 +220,6 @@
         set('set-name-v', p.name || '—');
         set('set-un-v', p.username ? '@' + p.username : '—');
         set('set-bio-v', p.bio || 'Не указано');
-        if (Auth.pubKey()) {
-            Crypto.fingerprint(Auth.pubKey()).then(f => set('key-fp', f));
-        }
     }
 
     /* ======== CHAT LIST ======== */
@@ -299,7 +296,6 @@
                 const pdata = pdoc.exists ? pdoc.data() : { name, email: c.emails?.[pid] || '' };
                 Chat.open(cid, pid, pdata);
                 UI.showChat();
-                if (window.innerWidth <= 768) UI.closeSidebar();
             } catch (e) {
                 console.error('Open chat:', e);
                 UI.toast('Ошибка открытия чата');
@@ -308,19 +304,7 @@
         return el;
     }
 
-    /* ======== MOBILE BURGER ======== */
-    if (window.innerWidth <= 768) {
-        const burger = document.createElement('button');
-        burger.className = 'icon-btn';
-        burger.style.cssText = 'position:fixed;top:calc(12px + env(safe-area-inset-top));left:14px;z-index:150;background:var(--bg1);border:1px solid var(--border);border-radius:var(--r12);width:40px;height:40px;box-shadow:var(--shadow1);';
-        burger.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>';
-        burger.onclick = () => UI.openSidebar();
-        $('app')?.appendChild(burger);
-    }
-
     /* ======== NAVIGATION ======== */
-    onclick('mob-overlay', () => UI.closeSidebar());
-
     onclick('mob-fab', () => {
         $('new-chat-modal')?.classList.remove('hidden');
         setTimeout(() => $('user-search-input')?.focus(), 300);
@@ -549,5 +533,5 @@
         navigator.serviceWorker.register('sw.js').catch(() => {});
     }
 
-    console.log('%c⚡ PCHAT 2.0 Ready', 'color:#818cf8;font-weight:800;font-size:16px');
+    console.log('%c⚡ PCHAT 3.0 Ready', 'color:#818cf8;font-weight:800;font-size:16px');
 })();
