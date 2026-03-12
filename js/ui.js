@@ -1,8 +1,4 @@
-/* ================================================
-   PCHAT — UI Utilities
-   ================================================ */
 const UI = (() => {
-    /* ---- Toast ---- */
     let _tt;
     const toast = (msg, ms = 3000) => {
         const el = document.getElementById('toast');
@@ -12,104 +8,109 @@ const UI = (() => {
         _tt = setTimeout(() => el.classList.remove('on'), ms);
     };
 
-    /* ---- Modal ---- */
-    const modal = (title, html, yesText = 'OK', noText = 'Отмена') => new Promise(ok => {
-        const m = document.getElementById('modal');
-        const t = document.getElementById('modal-title');
-        const b = document.getElementById('modal-body');
-        const y = document.getElementById('modal-yes');
-        const n = document.getElementById('modal-no');
-        t.textContent = title; b.innerHTML = html;
+    const modal = (title, html, yesText = 'OK', noText = 'Отмена', dangerYes = false) => new Promise(ok => {
+        const m = document.getElementById('mini-modal');
+        document.getElementById('mm-title').textContent = title;
+        document.getElementById('mm-body').innerHTML = html;
+        const y = document.getElementById('mm-yes');
+        const n = document.getElementById('mm-no');
         y.textContent = yesText; n.textContent = noText;
+        y.className = 'mm-btn yes' + (dangerYes ? ' danger' : '');
         m.classList.remove('hidden');
         const done = v => { m.classList.add('hidden'); y.onclick = n.onclick = null; ok(v) };
         y.onclick = () => done(true);
         n.onclick = () => done(false);
+        m.onclick = e => { if (e.target === m) done(false) };
     });
 
-    const prompt = (title, placeholder = '', def = '') => new Promise(ok => {
-        const html = `<input id="mp-input" placeholder="${placeholder}" value="${def}">`;
-        const m = document.getElementById('modal');
-        document.getElementById('modal-title').textContent = title;
-        document.getElementById('modal-body').innerHTML = html;
+    const prompt = (title, ph = '', def = '') => new Promise(ok => {
+        const m = document.getElementById('mini-modal');
+        document.getElementById('mm-title').textContent = title;
+        document.getElementById('mm-body').innerHTML = `<input id="mminp" placeholder="${ph}" value="${def}">`;
         m.classList.remove('hidden');
-        const inp = document.getElementById('mp-input');
+        const inp = document.getElementById('mminp');
+        const y = document.getElementById('mm-yes');
+        const n = document.getElementById('mm-no');
+        y.textContent = 'Сохранить'; n.textContent = 'Отмена';
         setTimeout(() => inp.focus(), 100);
         const done = v => { m.classList.add('hidden'); y.onclick = n.onclick = null; ok(v) };
-        const y = document.getElementById('modal-yes');
-        const n = document.getElementById('modal-no');
         y.onclick = () => done(inp.value.trim());
         n.onclick = () => done(null);
         inp.onkeydown = e => { if (e.key === 'Enter') done(inp.value.trim()) };
+        m.onclick = e => { if (e.target === m) done(null) };
     });
 
-    /* ---- Screen nav ---- */
-    const show = id => {
-        const all = ['chat-list-screen', 'chat-screen', 'contacts-screen', 'settings-screen'];
-        if (window.innerWidth < 769) {
-            all.forEach(s => document.getElementById(s).classList.toggle('hidden', s !== id));
+    // Screens
+    const showChat = () => {
+        if (window.innerWidth <= 768) {
+            const cv = document.getElementById('chat-view');
+            cv.classList.remove('hidden');
+            requestAnimationFrame(() => cv.classList.add('slide-in'));
         } else {
-            if (id === 'chat-screen') {
-                document.getElementById('chat-screen').classList.remove('hidden');
-                document.getElementById('contacts-screen').classList.add('hidden');
-                document.getElementById('settings-screen').classList.add('hidden');
-            } else if (id === 'contacts-screen') {
-                document.getElementById('contacts-screen').classList.remove('hidden');
-                document.getElementById('settings-screen').classList.add('hidden');
-            } else if (id === 'settings-screen') {
-                document.getElementById('settings-screen').classList.remove('hidden');
-                document.getElementById('contacts-screen').classList.add('hidden');
-            } else {
-                document.getElementById('contacts-screen').classList.add('hidden');
-                document.getElementById('settings-screen').classList.add('hidden');
-            }
+            document.getElementById('chat-view').classList.remove('hidden');
+            document.getElementById('welcome-screen').classList.add('hidden');
         }
     };
 
-    /* ---- Drawer ---- */
-    const openDrawer = () => { document.getElementById('drawer').classList.add('open'); document.getElementById('drawer-overlay').classList.remove('hidden') };
-    const closeDrawer = () => { document.getElementById('drawer').classList.remove('open'); document.getElementById('drawer-overlay').classList.add('hidden') };
+    const hideChat = () => {
+        const cv = document.getElementById('chat-view');
+        if (window.innerWidth <= 768) {
+            cv.classList.remove('slide-in');
+            setTimeout(() => cv.classList.add('hidden'), 300);
+        } else {
+            cv.classList.add('hidden');
+            document.getElementById('welcome-screen').classList.remove('hidden');
+        }
+    };
 
-    /* ---- Lightbox ---- */
-    const openLightbox = src => { document.getElementById('lightbox-img').src = src; document.getElementById('lightbox').classList.remove('hidden') };
+    const openSidebar = () => {
+        document.getElementById('sidebar').classList.add('open');
+        document.getElementById('mob-overlay').classList.remove('hidden');
+    };
+    const closeSidebar = () => {
+        document.getElementById('sidebar').classList.remove('open');
+        document.getElementById('mob-overlay').classList.add('hidden');
+    };
+
+    // Lightbox
+    const openLightbox = src => { document.getElementById('lb-img').src = src; document.getElementById('lightbox').classList.remove('hidden') };
     const closeLightbox = () => document.getElementById('lightbox').classList.add('hidden');
 
-    /* ---- Context menu ---- */
+    // Context menu
     const showCtx = (x, y, data) => {
-        const m = document.getElementById('ctx-menu');
+        const m = document.getElementById('ctx');
         m.classList.remove('hidden');
         const r = m.getBoundingClientRect();
-        m.style.left = Math.min(x, window.innerWidth - r.width - 8) + 'px';
-        m.style.top = Math.min(y, window.innerHeight - r.height - 8) + 'px';
-        m.dataset.msgId = data.id; m.dataset.msgText = data.text || ''; m.dataset.senderId = data.senderId || '';
+        m.style.left = Math.min(x, window.innerWidth - 200) + 'px';
+        m.style.top = Math.min(y, window.innerHeight - 150) + 'px';
+        m.dataset.mid = data.id; m.dataset.txt = data.text || ''; m.dataset.sid = data.senderId || '';
     };
-    const hideCtx = () => document.getElementById('ctx-menu').classList.add('hidden');
+    const hideCtx = () => document.getElementById('ctx').classList.add('hidden');
 
-    /* ---- Emoji ---- */
+    // Emojis
     const EMOJIS = {
-        '😊': ['😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','🤨','😐','😑','😶','😏','😒','🙄','😬','😮‍💨','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴','😵','🤯','🤠','🥳','🥸','😎','🤓','🧐','😕','😟','🙁','☹️','😮','😯','😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','👿','💀','☠️','💩','🤡','👹','👺','👻','👽','👾','🤖'],
-        '👋': ['👋','🤚','🖐','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👍','👎','✊','👊','🤛','🤜','👏','🙌','👐','🤲','🤝','🙏','💪','🦾','🦿','🦵','🦶','👂','👃','🧠','👀','👁','👅','👄','💋','❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝'],
-        '🐱': ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐔','🐧','🐦','🐤','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🐛','🦋','🐌','🐞','🐜','🪲','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦐','🦞','🦀','🐠','🐟','🐬','🐳','🐋','🦈','🐊','🐅','🐆','🦓','🦍','🐘','🦛','🦏','🐪','🐫','🦒','🦘','🦬','🐃','🐂','🐄','🐎','🐖','🐏','🐑','🦙','🐐','🦌','🐕','🐩','🦮','🐕‍🦺','🐈','🐈‍⬛','🪶','🐓','🦃','🦤','🦚','🦜','🦢','🦩','🕊','🐇','🦝','🦨','🦡','🦫','🦦','🦥','🐁','🐀','🐿','🦔'],
-        '🍕': ['🍏','🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦','🥬','🥒','🌶','🫑','🌽','🥕','🧄','🧅','🥔','🍠','🥐','🥖','🍞','🥨','🧀','🥚','🍳','🥞','🧇','🥓','🥩','🍗','🍖','🌭','🍔','🍟','🍕','🥪','🥙','🧆','🌮','🌯','🥗','🥘','🥫','🍝','🍜','🍲','🍛','🍣','🍱','🥟','🍤','🍙','🍚','🍘','🍥','🥠','🍢','🍡','🍧','🍨','🍦','🥧','🧁','🍰','🎂','🍮','🍭','🍬','🍫','🍿','🍩','🍪','☕','🍵','🧃','🥤','🧋','🍶','🍺','🍻','🥂','🍷','🍸','🍹','🧉','🍾'],
-        '⚽': ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🏓','🏸','🏒','🏑','🥍','🏏','🪃','🥅','⛳','🏹','🎣','🥊','🥋','🛹','🛼','🛷','⛸','🥌','🎿','⛷','🏂','🪂','🏋️','🤸','🤺','⛹️','🤾','🏌️','🏇','🧘','🏄','🏊','🤽','🚣','🧗','🚵','🚴','🏆','🥇','🥈','🥉','🏅','🎖','🏵','🎗','🎫','🎪','🎭','🎨','🎬','🎤','🎧','🎼','🎹','🥁','🎷','🎺','🎸','🪕','🎻','🎲','♟','🎯','🎳','🎮','🕹','🧩'],
-        '❤️': ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','☮️','✝️','☪️','☯️','✡️','🔯','♈','♉','♊','♋','♌','♍','♎','♏','♐','♑','♒','♓','⛎','💯','🔅','🔆','⚠️','♻️','✅','❌','⭕','❗','❓','‼️','⁉️','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','🟤','🔺','🔻','💠','🔘','🏁','🚩','🎌','🏴','🏳️','🏳️‍🌈','🏳️‍⚧️'],
+        '😊': ['😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇','🙂','😉','😍','🥰','😘','😋','😛','😜','🤪','😎','🥳','😴','🤔','🤫','🤭','😶','😏','😒','🙄','😬','😤','😡','🤬','😈','👿','💀','🤡','👻','👽','🤖','💩'],
+        '👋': ['👋','🤚','🖐','✋','👌','🤌','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','👇','👍','👎','✊','👊','👏','🙌','🤲','🤝','🙏','💪','🫶','❤️','🧡','💛','💚','💙','💜','🖤','🤍','💔','💕','💞','💓','💗','💖'],
+        '🐱': ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐔','🐧','🐦','🦆','🦅','🦉','🐺','🐴','🦄','🦋','🐌','🐞','🐢','🐍','🦎','🐙','🦑','🐠','🐟','🐬','🐳','🦈','🐊','🦒','🦓','🐘','🦏'],
+        '🍕': ['🍏','🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍒','🍑','🥭','🥥','🍅','🥑','🥦','🌶','🌽','🥕','🍠','🥐','🥖','🍞','🧀','🥚','🍳','🥞','🥓','🥩','🍗','🍖','🌭','🍔','🍟','🍕','🌮','🌯','🥗','🍝','🍜','🍲','🍣','🍤','🧁','🍰','🎂','🍫','🍬','🍭','☕','🍵','🧋','🍺','🍻','🥂','🍷'],
+        '⚽': ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🎱','🏓','🏸','🥊','🛹','🎿','⛷','🏂','🏋️','🤸','🧘','🏄','🏊','🚴','🏆','🥇','🥈','🥉','🎖','🎪','🎭','🎨','🎬','🎤','🎧','🎼','🎹','🥁','🎷','🎺','🎸','🎻','🎲','🎯','🎳','🎮','🕹','🧩'],
+        '❤️': ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','✅','❌','⭕','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','🔺','🔻','💠','⚠️','♻️','🔒','🔓','🔔','🔕','💡','🔍','❗','❓','‼️','💯','🔥','✨','⭐','🌟','💫'],
     };
 
-    const renderEmojis = (catKey) => {
+    const renderEmojis = cat => {
         const grid = document.getElementById('emoji-grid');
         grid.innerHTML = '';
-        const list = EMOJIS[catKey] || [];
-        list.forEach(e => {
+        (EMOJIS[cat] || []).forEach(e => {
             const b = document.createElement('button');
             b.textContent = e;
             b.onclick = () => {
-                const inp = document.getElementById('msg-input');
-                inp.value += e; inp.focus();
-                autoResize(inp); updateSend();
+                const i = document.getElementById('msg-input');
+                i.value += e; i.focus();
+                autoResize(i); updateSend();
             };
             grid.appendChild(b);
         });
-        document.querySelectorAll('#emoji-tabs button').forEach(b => b.classList.toggle('on', b.dataset.cat === catKey));
+        document.querySelectorAll('.emoji-tab-row button').forEach(b => b.classList.toggle('on', b.dataset.cat === cat));
     };
 
     const initEmojiTabs = () => {
@@ -122,13 +123,12 @@ const UI = (() => {
             b.onclick = () => renderEmojis(k);
             tabs.appendChild(b);
         });
+        renderEmojis(Object.keys(EMOJIS)[0]);
     };
 
-    /* ---- Textarea auto ---- */
     const autoResize = ta => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 120) + 'px' };
     const updateSend = () => { document.getElementById('send-btn').disabled = !document.getElementById('msg-input').value.trim() };
 
-    /* ---- PW strength ---- */
     const pwStrength = pw => {
         let s = 0;
         if (pw.length >= 8) s += 25;
@@ -136,37 +136,24 @@ const UI = (() => {
         if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) s += 20;
         if (/\d/.test(pw)) s += 20;
         if (/[^a-zA-Z\d]/.test(pw)) s += 20;
-        const fill = document.querySelector('.pw-bar-fill');
-        const label = document.querySelector('.pw-label');
+        const fill = document.getElementById('pw-fill');
+        const label = document.getElementById('pw-label');
         if (!fill) return;
-        let color, text;
-        if (s < 30) { color = '#ef4444'; text = 'Слабый' }
-        else if (s < 60) { color = '#eab308'; text = 'Средний' }
-        else if (s < 80) { color = '#22c55e'; text = 'Хороший' }
-        else { color = '#3b82f6'; text = 'Отличный' }
-        fill.style.width = s + '%'; fill.style.background = color;
-        label.textContent = text; label.style.color = color;
+        const colors = ['','#f87171','#facc15','#4ade80','#818cf8'];
+        const labels = ['','Слабый','Средний','Хороший','Отличный'];
+        const idx = s < 30 ? 1 : s < 60 ? 2 : s < 80 ? 3 : 4;
+        fill.style.width = s + '%';
+        fill.style.background = colors[idx];
+        if (label) { label.textContent = labels[idx]; label.style.color = colors[idx] }
     };
 
-    /* ---- Avatar ---- */
-    const colors = [
-        'linear-gradient(135deg,#667eea,#764ba2)',
-        'linear-gradient(135deg,#f093fb,#f5576c)',
-        'linear-gradient(135deg,#4facfe,#00f2fe)',
-        'linear-gradient(135deg,#43e97b,#38f9d7)',
-        'linear-gradient(135deg,#fa709a,#fee140)',
-        'linear-gradient(135deg,#a18cd1,#fbc2eb)',
-        'linear-gradient(135deg,#fccb90,#d57eeb)',
-        'linear-gradient(135deg,#e0c3fc,#8ec5fc)',
-    ];
-    const avatarBg = name => { let h = 0; for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h); return colors[Math.abs(h) % colors.length] };
-
-    /* ---- Time ---- */
-    const fmtTime = ts => {
-        if (!ts) return '';
-        const d = ts.toDate ? ts.toDate() : new Date(ts);
-        return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    const avatarBg = name => {
+        const grads = ['linear-gradient(135deg,#818cf8,#a855f7)','linear-gradient(135deg,#f472b6,#ec4899)','linear-gradient(135deg,#38bdf8,#0ea5e9)','linear-gradient(135deg,#4ade80,#16a34a)','linear-gradient(135deg,#fb923c,#ea580c)','linear-gradient(135deg,#a78bfa,#7c3aed)','linear-gradient(135deg,#f9a8d4,#db2777)','linear-gradient(135deg,#6ee7b7,#059669)'];
+        let h = 0; for (let i = 0; i < (name || '').length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+        return grads[Math.abs(h) % grads.length];
     };
+
+    const fmtTime = ts => { if (!ts) return ''; const d = ts.toDate ? ts.toDate() : new Date(ts); return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) };
     const fmtDate = ts => {
         if (!ts) return '';
         const d = ts.toDate ? ts.toDate() : new Date(ts);
@@ -176,7 +163,7 @@ const UI = (() => {
         if (diff < 7 * 864e5) return d.toLocaleDateString('ru-RU', { weekday: 'short' });
         return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
     };
-    const fmtDateSep = ts => {
+    const fmtSep = ts => {
         if (!ts) return '';
         const d = ts.toDate ? ts.toDate() : new Date(ts);
         const now = new Date(); const diff = now - d;
@@ -185,21 +172,8 @@ const UI = (() => {
         return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
     };
 
-    /* ---- Haptic ---- */
-    const haptic = (t = 'light') => { if (navigator.vibrate) navigator.vibrate(t === 'light' ? 10 : t === 'medium' ? 20 : 40) };
-
-    /* ---- Escape HTML ---- */
+    const haptic = t => { if (navigator.vibrate) navigator.vibrate(t === 'light' ? 10 : 25) };
     const esc = s => { const d = document.createElement('div'); d.textContent = s; return d.innerHTML };
 
-    return {
-        toast, modal, prompt, show,
-        openDrawer, closeDrawer,
-        openLightbox, closeLightbox,
-        showCtx, hideCtx,
-        renderEmojis, initEmojiTabs,
-        autoResize, updateSend,
-        pwStrength, avatarBg,
-        fmtTime, fmtDate, fmtDateSep,
-        haptic, esc
-    };
+    return { toast, modal, prompt, showChat, hideChat, openSidebar, closeSidebar, openLightbox, closeLightbox, showCtx, hideCtx, renderEmojis, initEmojiTabs, autoResize, updateSend, pwStrength, avatarBg, fmtTime, fmtDate, fmtSep, haptic, esc };
 })();
