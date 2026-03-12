@@ -1,46 +1,66 @@
-/* ================================================
-   PCHAT — Contacts Module
-   ================================================ */
 const Contacts = (() => {
     let _to;
 
     const init = () => {
-        document.getElementById('contacts-search').addEventListener('input', e => {
+        const inp = document.getElementById('user-search-input');
+        inp.addEventListener('input', e => {
             clearTimeout(_to);
-            _to = setTimeout(() => search(e.target.value.trim()), 300);
+            _to = setTimeout(() => search(e.target.value.trim()), 350);
         });
     };
 
     const search = async q => {
-        const list = document.getElementById('contacts-list');
-        const empty = document.getElementById('empty-contacts');
-        if (!q || q.length < 3) { list.innerHTML = ''; list.appendChild(empty); empty.classList.remove('hidden'); return }
+        const box = document.getElementById('user-search-results');
+        if (!q || q.length < 2) {
+            box.innerHTML = `<div class="search-hint"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><p>Введите @юзернейм или email</p></div>`;
+            return;
+        }
+        box.innerHTML = `<div class="search-hint"><p>Поиск...</p></div>`;
         try {
-            const snap = await db.collection('users')
-                .where('email', '>=', q.toLowerCase())
-                .where('email', '<=', q.toLowerCase() + '\uf8ff')
-                .limit(20).get();
-            list.innerHTML = '';
-            if (snap.empty) {
-                list.innerHTML = '<div class="empty-view"><div class="empty-img">🤷</div><h3>Не найдено</h3><p>Попробуйте другой email</p></div>';
+            const results = new Map();
+            const clean = q.startsWith('@') ? q.slice(1) : q;
+
+            // Search by username
+            const unSnap = await db.collection('users')
+                .where('username', '>=', clean.toLowerCase())
+                .where('username', '<=', clean.toLowerCase() + '\uf8ff')
+                .limit(10).get();
+            unSnap.forEach(d => { if (d.id !== Auth.user().uid) results.set(d.id, d.data()) });
+
+            // Search by email (only if looks like email)
+            if (q.includes('@') && !q.startsWith('@')) {
+                const emSnap = await db.collection('users')
+                    .where('email', '>=', q.toLowerCase())
+                    .where('email', '<=', q.toLowerCase() + '\uf8ff')
+                    .limit(5).get();
+                emSnap.forEach(d => { if (d.id !== Auth.user().uid) results.set(d.id, d.data()) });
+            }
+
+            box.innerHTML = '';
+            if (results.size === 0) {
+                box.innerHTML = `<div class="search-hint"><p>Пользователь не найден</p></div>`;
                 return;
             }
-            snap.forEach(doc => {
-                if (doc.id === Auth.user().uid) return;
-                const d = doc.data();
-                const el = document.createElement('div');
-                el.className = 'contact-row';
-                const ini = (d.name || d.email || 'U')[0].toUpperCase();
-                el.innerHTML = `
-                    <div class="peer-avatar" style="background:${UI.avatarBg(d.name || d.email)}">${ini}</div>
-                    <div class="contact-row-info">
-                        <div class="contact-row-name">${UI.esc(d.name || 'User')}</div>
-                        <div class="contact-row-email">${UI.esc(d.email)}</div>
-                    </div>`;
-                el.onclick = () => startChat(doc.id, d);
-                list.appendChild(el);
-            });
-        } catch (e) { UI.toast('Ошибка поиска') }
+            results.forEach((data, uid) => box.appendChild(makeUserItem(uid, data)));
+        } catch (e) {
+            console.error(e);
+            box.innerHTML = `<div class="search-hint"><p>Ошибка поиска</p></div>`;
+        }
+    };
+
+    const makeUserItem = (uid, data) => {
+        const el = document.createElement('div');
+        el.className = 'search-result-item';
+        const ini = (data.name || 'U')[0].toUpperCase();
+        const un = data.username ? `@${data.username}` : data.email;
+        el.innerHTML = `
+            <div class="sri-avatar" style="background:${UI.avatarBg(data.name || data.email)}">${ini}</div>
+            <div class="sri-info">
+                <div class="sri-name">${UI.esc(data.name || 'User')}</div>
+                <div class="sri-un">${UI.esc(un)}</div>
+            </div>`;
+        el.onclick = () => startChat(uid, data);
+        return el;
     };
 
     const startChat = async (uid, data) => {
@@ -51,14 +71,22 @@ const Contacts = (() => {
             await db.collection('chats').doc(chatId).set({
                 participants: [me, uid],
                 names: { [me]: Auth.profile().name, [uid]: data.name || 'User' },
+                usernames: { [me]: Auth.profile().username || '', [uid]: data.username || '' },
                 emails: { [me]: Auth.profile().email, [uid]: data.email },
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                 lastMessage: null,
                 lastMessageTime: firebase.firestore.FieldValue.serverTimestamp()
             });
         }
+        // Close modal
+        document.getElementById('new-chat-modal').classList.add('hidden');
+        document.getElementById('user-search-input').value = '';
+        document.getElementById('user-search-results').innerHTML = '';
+
         Chat.open(chatId, uid, data);
-        UI.show('chat-screen');
+        // On mobile: slide in
+        document.getElementById('chat-view').classList.remove('hidden');
+        document.getElementById('chat-view').classList.add('slide-in');
     };
 
     return { init, startChat };
