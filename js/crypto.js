@@ -1,18 +1,8 @@
-/* ================================================
-   PCHAT — End-to-End Encryption Module
-   ================================================
-   ECDH P-256  →  Key exchange
-   HKDF SHA-256 → Key derivation
-   AES-256-GCM → Message encryption
-   All via Web Crypto API — no external libraries.
-   Private keys stored in IndexedDB, never sent to server.
-*/
 const Crypto = (() => {
     const CURVE = 'P-256';
     const IV_LEN = 12;
     const DB = 'PCHAT_Keys';
 
-    /* ---- IndexedDB ---- */
     const openDB = () => new Promise((ok, no) => {
         const r = indexedDB.open(DB, 1);
         r.onupgradeneeded = e => { e.target.result.createObjectStore('keys', { keyPath: 'id' }) };
@@ -50,7 +40,6 @@ const Crypto = (() => {
         });
     };
 
-    /* ---- Helpers ---- */
     const ab2b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
     const b642ab = b64 => Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer;
     const concat = (...bufs) => {
@@ -61,14 +50,13 @@ const Crypto = (() => {
         return r.buffer;
     };
 
-    /* ---- ECDH ---- */
     const genKeyPair = () => crypto.subtle.generateKey({ name: 'ECDH', namedCurve: CURVE }, true, ['deriveKey', 'deriveBits']);
     const exportPub = async k => ab2b64(await crypto.subtle.exportKey('raw', k));
     const importPub = b64 => crypto.subtle.importKey('raw', b642ab(b64), { name: 'ECDH', namedCurve: CURVE }, true, []);
     const exportPriv = async k => JSON.stringify(await crypto.subtle.exportKey('jwk', k));
+    // ВОТ ЗДЕСЬ БЫЛА ОШИБКА ИЗ-ЗА ОБРЕЗКИ:
     const importPriv = s => crypto.subtle.importKey('jwk', JSON.parse(s), { name: 'ECDH', namedCurve: CURVE }, true, ['deriveKey', 'deriveBits']);
 
-    /* ---- Key derivation ---- */
     const deriveAES = async (priv, pub, salt) => {
         const bits = await crypto.subtle.deriveBits({ name: 'ECDH', public: pub }, priv, 256);
         const mat = await crypto.subtle.importKey('raw', bits, 'HKDF', false, ['deriveKey']);
@@ -81,7 +69,6 @@ const Crypto = (() => {
         );
     };
 
-    /* ---- AES-256-GCM ---- */
     const encrypt = async (text, key) => {
         const iv = crypto.getRandomValues(new Uint8Array(IV_LEN));
         const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, tagLength: 128 }, key, new TextEncoder().encode(text));
@@ -95,7 +82,6 @@ const Crypto = (() => {
         return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv, tagLength: 128 }, key, ct));
     };
 
-    /* File encrypt/decrypt */
     const encryptFile = async (ab, key) => {
         const iv = crypto.getRandomValues(new Uint8Array(IV_LEN));
         const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, tagLength: 128 }, key, ab);
@@ -107,13 +93,11 @@ const Crypto = (() => {
         return crypto.subtle.decrypt({ name: 'AES-GCM', iv: a.slice(0, IV_LEN), tagLength: 128 }, key, a.slice(IV_LEN));
     };
 
-    /* ---- Fingerprint ---- */
     const fingerprint = async b64 => {
         const h = new Uint8Array(await crypto.subtle.digest('SHA-256', b642ab(b64)));
         return Array.from(h).slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join(':').toUpperCase();
     };
 
-    /* ---- Session keys cache ---- */
     const cache = new Map();
 
     const getOrCreateKeyPair = async uid => {
