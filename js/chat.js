@@ -22,12 +22,10 @@ const Chat = (() => {
         const avatarEl = document.getElementById('chat-peer-avatar');
         const nameEl = document.getElementById('chat-peer-name');
         const statusEl = document.getElementById('chat-peer-status');
-        const typingAv = document.getElementById('typing-avatar');
 
         if (avatarEl) { avatarEl.textContent = ini; avatarEl.style.background = bg; }
         if (nameEl) nameEl.textContent = name;
         if (statusEl) statusEl.textContent = 'в сети';
-        if (typingAv) { typingAv.textContent = ini; typingAv.style.background = bg; }
 
         const msgs = document.getElementById('msgs');
         if (msgs) msgs.innerHTML = '';
@@ -42,7 +40,6 @@ const Chat = (() => {
 
         listenMessages(chatId);
         watchStatus(peerId);
-        watchTyping(chatId, peerId);
         markRead(chatId);
     };
 
@@ -123,6 +120,7 @@ const Chat = (() => {
         const msgsEl = document.getElementById('msgs');
         const scroll = document.getElementById('msgs-scroll');
         let lastDateStr = null;
+        let isInitialLoad = true; // Флаг: первая загрузка истории
 
         _unsub = db.collection('chats').doc(chatId)
             .collection('messages')
@@ -156,12 +154,15 @@ const Chat = (() => {
                         if (m.senderId !== me) {
                             markMsgRead(chatId, id);
                             
-                            let notifText = m.text || 'Новое сообщение';
-                            if (m.type === 'voice') notifText = '🎤 Голосовое сообщение';
-                            else if (m.type === 'image') notifText = '📷 Фотография';
-                            else if (m.type === 'file') notifText = '📎 Файл';
+                            // Уведомляем ТОЛЬКО если это не загрузка истории
+                            if (!isInitialLoad) {
+                                let notifText = m.text || 'Новое сообщение';
+                                if (m.type === 'voice') notifText = '🎤 Голосовое сообщение';
+                                else if (m.type === 'image') notifText = '📷 Фотография';
+                                else if (m.type === 'file') notifText = '📎 Файл';
 
-                            Notif.show(_pdata?.name || 'PCHAT', notifText);
+                                Notif.show(_pdata?.name || 'PCHAT', notifText);
+                            }
                         }
                     }
 
@@ -174,6 +175,9 @@ const Chat = (() => {
                         document.querySelector(`[data-mid="${change.doc.id}"]`)?.remove();
                     }
                 });
+                
+                // После первой обработки всех старых сообщений отключаем флаг
+                isInitialLoad = false; 
             });
     };
 
@@ -294,12 +298,6 @@ const Chat = (() => {
         db.collection('chats').doc(_cid).update({ [`typing_${me}`]: val }).catch(() => {});
     };
 
-    const handleTyping = () => {
-        if (!_typing) { _typing = true; setTyping(true); }
-        clearTimeout(_typeTo);
-        _typeTo = setTimeout(() => { _typing = false; setTyping(false); }, 2000);
-    };
-
     const watchTyping = (chatId, peerId) => {
         db.collection('chats').doc(chatId).onSnapshot(doc => {
             if (!doc.exists) return;
@@ -350,5 +348,5 @@ const Chat = (() => {
         clearTimeout(_typeTo);
     };
 
-    return { cid, open, send, sendFile, del, copy, handleTyping, markRead, close };
+    return { cid, open, send, sendFile, del, copy, markRead, close };
 })();
