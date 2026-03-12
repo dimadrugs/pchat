@@ -5,7 +5,6 @@
     const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
     const onclick = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
 
-    /* ---- Глобальные переменные ---- */
     let _chatUnsub = null;
     let activeChatId = null;
 
@@ -34,7 +33,6 @@
         showAuth();
     }
 
-    /* ---- States ---- */
     function showAuth() {
         $('auth')?.classList.remove('hidden');
         $('app')?.classList.add('hidden');
@@ -81,7 +79,7 @@
         obUnTimeout = setTimeout(async () => {
             try {
                 const ok = await Auth.checkUsername(val);
-                check.textContent = ok ? '✓ Доступен' : '✗ Занят';
+                check.textContent = ok ? '✅ Доступен' : '❌ Занят';
                 check.className = 'field-check ' + (ok ? 'ok' : 'err');
             } catch (err) {
                 check.textContent = 'Ошибка проверки';
@@ -148,7 +146,7 @@
         regUnTimeout = setTimeout(async () => {
             try {
                 const ok = await Auth.checkUsername(val);
-                check.textContent = ok ? '✓ Доступен' : '✗ Занят';
+                check.textContent = ok ? '✅ Доступен' : '❌ Занят';
                 check.className = 'field-check ' + (ok ? 'ok' : 'err');
             } catch (err) {
                 check.textContent = 'Ошибка';
@@ -274,6 +272,7 @@
         const unread = c[`unread_${me}`] || 0;
         const msg = c.lastMessage || 'Начните диалог';
         const time = c.lastMessageTime ? UI.fmtDate(c.lastMessageTime) : '';
+
         const el = document.createElement('div');
         el.className = 'chat-row' + (cid === activeChatId ? ' active' : '');
         const ini = (name || 'U')[0].toUpperCase();
@@ -313,8 +312,8 @@
     if (window.innerWidth <= 768) {
         const burger = document.createElement('button');
         burger.className = 'icon-btn';
-        burger.style.cssText = 'position:fixed;top:calc(12px + env(safe-area-inset-top));left:14px;z-index:150;background:var(--bg1);border:1px solid var(--border2);border-radius:10px;width:38px;height:38px;display:flex;';
-        burger.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>';
+        burger.style.cssText = 'position:fixed;top:calc(12px + env(safe-area-inset-top));left:14px;z-index:150;background:var(--bg1);border:1px solid var(--border);border-radius:var(--r12);width:40px;height:40px;box-shadow:var(--shadow1);';
+        burger.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>';
         burger.onclick = () => UI.openSidebar();
         $('app')?.appendChild(burger);
     }
@@ -323,13 +322,11 @@
     onclick('mob-overlay', () => UI.closeSidebar());
 
     onclick('mob-fab', () => {
-        console.log('FAB clicked');
         $('new-chat-modal')?.classList.remove('hidden');
         setTimeout(() => $('user-search-input')?.focus(), 300);
     });
 
     onclick('new-chat-btn', () => {
-        console.log('+ clicked');
         $('new-chat-modal')?.classList.remove('hidden');
         setTimeout(() => $('user-search-input')?.focus(), 300);
     });
@@ -439,6 +436,20 @@
     if (photoPick) photoPick.onchange = e => { if (e.target.files[0]) { Chat.sendFile(e.target.files[0]); e.target.value = ''; } };
     if (filePick) filePick.onchange = e => { if (e.target.files[0]) { Chat.sendFile(e.target.files[0]); e.target.value = ''; } };
 
+    /* ======== VOICE ======== */
+    onclick('voice-btn', () => {
+        if (Voice.isRecording()) return;
+        Voice.start();
+    });
+
+    onclick('voice-cancel', () => {
+        Voice.cancel();
+    });
+
+    onclick('voice-send', () => {
+        Voice.sendVoice();
+    });
+
     /* ======== CONTEXT MENU ======== */
     document.querySelectorAll('.ctx-btn').forEach(b => {
         b.onclick = () => {
@@ -538,5 +549,5 @@
         navigator.serviceWorker.register('sw.js').catch(() => {});
     }
 
-    console.log('%c🔒 PCHAT 2.0 Ready', 'color:#818cf8;font-weight:800;font-size:16px');
+    console.log('%c⚡ PCHAT 2.0 Ready', 'color:#818cf8;font-weight:800;font-size:16px');
 })();

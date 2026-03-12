@@ -59,7 +59,6 @@ const Chat = (() => {
         const me = Auth.user()?.uid;
         if (!me) return;
 
-        // Мгновенно очищаем инпут
         const inp = document.getElementById('msg-input');
         if (inp) {
             inp.value = '';
@@ -94,9 +93,9 @@ const Chat = (() => {
                     ...meta
                 });
 
-            // Превью — показываем реальный текст, не "зашифровано"
             const preview = type === 'image' ? '📷 Фото'
-                : type === 'file' ? `📄 ${meta.fileName || 'Файл'}`
+                : type === 'file' ? `📎 ${meta.fileName || 'Файл'}`
+                : type === 'voice' ? '🎤 Голосовое'
                 : text.length > 60 ? text.substring(0, 60) + '...'
                 : text;
 
@@ -117,8 +116,8 @@ const Chat = (() => {
 
     const sendFile = async file => {
         if (!_cid || !file) return;
-        if (file.size > 10 * 1024 * 1024) { UI.toast('❌ Макс. 10 МБ'); return; }
-        UI.toast('📤 Загрузка...');
+        if (file.size > 10 * 1024 * 1024) { UI.toast('⚠ Макс. 10 МБ'); return; }
+        UI.toast('⏫ Загрузка...');
         try {
             const me = Auth.user()?.uid;
             if (!me) return;
@@ -138,7 +137,7 @@ const Chat = (() => {
             const snap = await ref.put(new Blob([uploadData]));
             const url = await snap.ref.getDownloadURL();
             const isImg = file.type.startsWith('image/');
-            await send(isImg ? '📷 Фото' : `📄 ${file.name}`, isImg ? 'image' : 'file', {
+            await send(isImg ? '📷 Фото' : `📎 ${file.name}`, isImg ? 'image' : 'file', {
                 fileURL: url, fileName: file.name,
                 fileSize: file.size, fileType: file.type, fileEncrypted: fenc
             });
@@ -220,58 +219,80 @@ const Chat = (() => {
         wrap.className = `msg ${mine ? 'out' : 'in'}`;
         wrap.dataset.mid = id;
 
-        let content = '';
-        if (m.type === 'image' && m.fileURL) {
-            content = `<img class="msg-img" src="${m.fileURL}" alt="Фото" loading="lazy">`;
-        } else if (m.type === 'file' && m.fileURL) {
-            content = `
-                <a class="msg-file" href="${m.fileURL}" target="_blank" rel="noopener">
-                    <span class="msg-file-ic">📄</span>
-                    <div>
-                        <div class="msg-fn">${UI.esc(m.fileName || 'Файл')}</div>
-                        <div class="msg-fs">${fmtSize(m.fileSize)}</div>
-                    </div>
-                </a>`;
-        } else {
-            content = `<span class="msg-text">${linkify(UI.esc(txt))}</span>`;
-        }
-
         const time = UI.fmtTime(m.timestamp);
-
-        // Статус и время — в одну строку справа внутри баббла
         const statusHtml = mine
             ? `<span class="msg-status ${statusClass(m.status)}">${statusIcon(m.status)}</span>`
             : '';
 
-        wrap.innerHTML = `
-            <div class="msg-bub">
-                ${content}
-                <div class="msg-footer">
-                    <span class="msg-time">${time}</span>
-                    ${statusHtml}
-                </div>
-            </div>`;
+        // Voice message
+        if (m.type === 'voice' && m.fileURL) {
+            const bub = document.createElement('div');
+            bub.className = 'msg-bub';
 
-        // Long press
+            const voiceEl = Voice.makeVoiceEl(m);
+            bub.appendChild(voiceEl);
+
+            const footer = document.createElement('div');
+            footer.className = 'msg-footer';
+            footer.innerHTML = `<span class="msg-time">${time}</span>${statusHtml}`;
+            bub.appendChild(footer);
+
+            wrap.appendChild(bub);
+            addLongPress(wrap, id, '🎤 Голосовое', m.senderId);
+            return wrap;
+        }
+
+        let content = '';
+        let isImgOnly = false;
+
+        if (m.type === 'image' && m.fileURL) {
+            content = `<img class="msg-img" src="${m.fileURL}" alt="Фото" loading="lazy">`;
+            isImgOnly = true;
+        } else if (m.type === 'file' && m.fileURL) {
+            content = `
+            <a class="msg-file" href="${m.fileURL}" target="_blank" rel="noopener">
+                <span class="msg-file-ic">📎</span>
+                <div>
+                    <div class="msg-fn">${UI.esc(m.fileName || 'Файл')}</div>
+                    <div class="msg-fs">${fmtSize(m.fileSize)}</div>
+                </div>
+            </a>`;
+        } else {
+            content = `<span class="msg-text">${linkify(UI.esc(txt))}</span>`;
+        }
+
+        wrap.innerHTML = `
+        <div class="msg-bub${isImgOnly ? ' img-only' : ''}">
+            ${content}
+            <div class="msg-footer">
+                <span class="msg-time">${time}</span>
+                ${statusHtml}
+            </div>
+        </div>`;
+
+        addLongPress(wrap, id, txt, m.senderId);
+
+        const img = wrap.querySelector('.msg-img');
+        if (img) img.addEventListener('click', () => UI.openLightbox(img.src));
+
+        return wrap;
+    };
+
+    const addLongPress = (wrap, id, txt, senderId) => {
         let pressTimer;
         wrap.addEventListener('touchstart', e => {
             pressTimer = setTimeout(() => {
                 UI.haptic('medium');
                 UI.showCtx(e.touches[0].clientX, e.touches[0].clientY,
-                    { id, text: txt, senderId: m.senderId });
+                    { id, text: txt, senderId });
             }, 500);
         }, { passive: true });
         wrap.addEventListener('touchend', () => clearTimeout(pressTimer));
         wrap.addEventListener('touchmove', () => clearTimeout(pressTimer));
         wrap.addEventListener('contextmenu', e => {
             e.preventDefault();
-            UI.showCtx(e.clientX, e.clientY, { id, text: txt, senderId: m.senderId });
+            UI.showCtx(e.clientX, e.clientY, { id, text: txt, senderId });
         });
-
-        const img = wrap.querySelector('.msg-img');
-        if (img) img.addEventListener('click', () => UI.openLightbox(img.src));
-
-        return wrap;
     };
 
     const statusClass = s => s === 'read' ? 's3' : s === 'delivered' ? 's2' : 's1';
