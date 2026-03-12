@@ -1,23 +1,22 @@
 const Notif = (() => {
-    // Предзагружаем звук, чтобы он играл без задержек
+    // Звук из файла (положи notification.mp3 рядом с index.html)
     const audio = new Audio('./notification.mp3');
 
     const init = () => {
-        // Проверяем, поддерживает ли браузер уведомления
         if (!('Notification' in window)) return;
 
-        // Если еще не спрашивали - показываем кнопку в интерфейсе (или запрашиваем при первом клике)
+        // Кнопка для iOS, чтобы разрешить пуши (появляется только 1 раз)
         if (Notification.permission === 'default') {
             const requestBtn = document.createElement('button');
-            requestBtn.textContent = '🔔 Включить уведомления';
-            requestBtn.style.cssText = 'position:fixed; top:20px; left:50%; transform:translateX(-50%); z-index:9999; padding:10px 20px; background:var(--accent); color:#fff; border:none; border-radius:20px; font-weight:bold; cursor:pointer; box-shadow:var(--shadow2);';
+            requestBtn.innerHTML = '🔔 Разрешить уведомления';
+            requestBtn.style.cssText = 'position:fixed; top:20px; left:50%; transform:translateX(-50%); z-index:9999; padding:12px 24px; background:var(--grad); color:#fff; border:none; border-radius:24px; font-weight:bold; cursor:pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.3); font-family:inherit;';
             
             document.body.appendChild(requestBtn);
 
             requestBtn.onclick = async () => {
                 const p = await Notification.requestPermission();
                 if (p === 'granted') {
-                    UI.toast('Уведомления включены');
+                    UI.toast('✅ Уведомления включены');
                 }
                 requestBtn.remove();
             };
@@ -25,13 +24,13 @@ const Notif = (() => {
     };
 
     const show = (title, body) => {
-        // Если вкладка активна (ты прямо сейчас в чате) - пуш не нужен, просто играем звук
+        // Если ты в чате прямо сейчас - пуш не вылезает, только играет звук
         if (document.hasFocus()) {
             sound();
             return;
         }
 
-        // Показываем Push, если разрешено
+        // Если свернуто и пуши разрешены - показываем пуш
         if ('Notification' in window && Notification.permission === 'granted') {
             const n = new Notification(title, { 
                 body, 
@@ -50,10 +49,8 @@ const Notif = (() => {
 
     const sound = () => {
         try {
-            audio.currentTime = 0; // Перематываем в начало
-            audio.play().catch(e => {
-                console.warn('Автоплей звука заблокирован браузером', e);
-            });
+            audio.currentTime = 0;
+            audio.play().catch(() => {});
         } catch (e) {}
     };
 
