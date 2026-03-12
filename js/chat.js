@@ -40,7 +40,7 @@ const Chat = (() => {
         }
         UI.updateSend();
 
-        try { await setupE2E(chatId, peerId); } catch (e) { console.warn('E2E:', e); }
+        try { await setupE2E(chatId, peerId); } catch (e) { console.warn('E2E Setup warning:', e); }
 
         listenMessages(chatId);
         watchStatus(peerId);
@@ -176,6 +176,8 @@ const Chat = (() => {
                         }
 
                         let txt = m.text;
+                        let decryptFailed = false;
+
                         if (m.encrypted && _pid) {
                             try {
                                 const pdoc = await db.collection('users').doc(_pid).get();
@@ -184,11 +186,16 @@ const Chat = (() => {
                                         chatId, Auth.keyPair().privateKey, pdoc.data().publicKey
                                     );
                                     txt = await Crypto.decrypt(m.text, key);
+                                } else {
+                                    throw new Error("No public key");
                                 }
-                            } catch (e) { txt = '[не удалось расшифровать]'; }
+                            } catch (e) { 
+                                decryptFailed = true;
+                                txt = '';
+                            }
                         }
 
-                        const el = makeMsgEl(id, m, txt);
+                        const el = makeMsgEl(id, m, txt, decryptFailed);
                         msgsEl?.appendChild(el);
 
                         requestAnimationFrame(() => {
@@ -196,7 +203,18 @@ const Chat = (() => {
                         });
 
                         const me = Auth.user()?.uid;
-                        if (m.senderId !== me) markMsgRead(chatId, id);
+                        if (m.senderId !== me) {
+                            markMsgRead(chatId, id);
+                            
+                            // Запускаем пуш и звук
+                            let notifText = txt || 'Новое сообщение';
+                            if (decryptFailed) notifText = '🔒 Сообщение недоступно';
+                            else if (m.type === 'voice') notifText = '🎤 Голосовое сообщение';
+                            else if (m.type === 'image') notifText = '📷 Фотография';
+                            else if (m.type === 'file') notifText = '📎 Файл';
+
+                            Notif.show(_pdata?.name || 'PCHAT', notifText);
+                        }
                     }
 
                     if (change.type === 'modified') {
@@ -211,7 +229,7 @@ const Chat = (() => {
             });
     };
 
-    const makeMsgEl = (id, m, txt) => {
+    const makeMsgEl = (id, m, txt, decryptFailed = false) => {
         const me = Auth.user()?.uid;
         const mine = m.senderId === me;
 
@@ -224,28 +242,33 @@ const Chat = (() => {
             ? `<span class="msg-status ${statusClass(m.status)}">${statusIcon(m.status)}</span>`
             : '';
 
-        // Voice message
-        if (m.type === 'voice' && m.fileURL) {
+        let content = '';
+        let isImgOnly = false;
+
+        if (decryptFailed) {
+            content = `
+            <div class="msg-decryption-error">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <span>Сообщение недоступно (изменились ключи)</span>
+            </div>`;
+        } 
+        else if (m.type === 'voice' && m.fileURL) {
             const bub = document.createElement('div');
             bub.className = 'msg-bub';
-
+            
             const voiceEl = Voice.makeVoiceEl(m);
             bub.appendChild(voiceEl);
-
+            
             const footer = document.createElement('div');
             footer.className = 'msg-footer';
             footer.innerHTML = `<span class="msg-time">${time}</span>${statusHtml}`;
             bub.appendChild(footer);
-
+            
             wrap.appendChild(bub);
             addLongPress(wrap, id, '🎤 Голосовое', m.senderId);
             return wrap;
         }
-
-        let content = '';
-        let isImgOnly = false;
-
-        if (m.type === 'image' && m.fileURL) {
+        else if (m.type === 'image' && m.fileURL) {
             content = `<img class="msg-img" src="${m.fileURL}" alt="Фото" loading="lazy">`;
             isImgOnly = true;
         } else if (m.type === 'file' && m.fileURL) {
@@ -270,7 +293,9 @@ const Chat = (() => {
             </div>
         </div>`;
 
-        addLongPress(wrap, id, txt, m.senderId);
+        if (!decryptFailed) {
+            addLongPress(wrap, id, txt, m.senderId);
+        }
 
         const img = wrap.querySelector('.msg-img');
         if (img) img.addEventListener('click', () => UI.openLightbox(img.src));
