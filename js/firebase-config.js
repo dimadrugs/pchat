@@ -10,7 +10,7 @@ const firebaseConfig = {
     projectId: "pchat-cf54e",
     storageBucket: "pchat-cf54e.firebasestorage.app",
     messagingSenderId: "406902706097",
-    appId: "1:406902706097:web:28f11bab3ec7508fd8f790"
+    appId: "1:406902706097:web:28f11bab3ec7508fd8f790",
 	measurementId: "G-TG6WW9FHGS"
 };
 
@@ -22,5 +22,6 @@ const storage = firebase.storage();
 
 db.settings({ cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED });
 db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+
 
 console.log('%c🔒 PCHAT Firebase OK', 'color:#667eea;font-weight:bold');
