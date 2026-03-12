@@ -104,26 +104,9 @@ const UI = (() => {
         }
     };
 
-    /* ---- Sidebar ---- */
-    const openSidebar = () => {
-        const sb = $('sidebar');
-        const ov = $('mob-overlay');
-        if (sb) sb.classList.add('open');
-        if (ov) {
-            ov.classList.remove('hidden');
-            requestAnimationFrame(() => ov.classList.add('show'));
-        }
-    };
-
-    const closeSidebar = () => {
-        const sb = $('sidebar');
-        const ov = $('mob-overlay');
-        if (sb) sb.classList.remove('open');
-        if (ov) {
-            ov.classList.remove('show');
-            setTimeout(() => ov.classList.add('hidden'), 300);
-        }
-    };
+    /* Пустышки, чтобы не было ошибок, так как меню больше не выезжает */
+    const openSidebar = () => {};
+    const closeSidebar = () => {};
 
     /* ---- Lightbox ---- */
     const openLightbox = src => {
