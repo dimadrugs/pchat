@@ -1,232 +1,525 @@
-/* ================================================
-   PCHAT — Chat Module (E2E encrypted messaging)
-   ================================================ */
 const Chat = (() => {
-    let _cid = null, _pid = null, _pdata = null;
-    let _unsub = null, _typeTo = null, _typing = false;
+    let _cid = null;
+    let _pid = null;
+    let _pdata = null;
+    let _unsub = null;
+    let _typeTo = null;
+    let _typing = false;
 
     const cid = () => _cid;
 
-    /* ---- Open chat ---- */
+    /* ======== OPEN CHAT ======== */
     const open = async (chatId, peerId, peerData) => {
-        _cid = chatId; _pid = peerId; _pdata = peerData;
+        _cid = chatId;
+        _pid = peerId;
+        _pdata = peerData;
 
-        const ini = (peerData.name || peerData.email || 'U')[0].toUpperCase();
-        document.getElementById('peer-avatar').textContent = ini;
-        document.getElementById('peer-avatar').style.background = UI.avatarBg(peerData.name || peerData.email);
-        document.getElementById('peer-name').textContent = peerData.name || 'User';
-        document.getElementById('messages').innerHTML = '';
-        document.getElementById('msg-input').value = '';
+        // Скрываем FAB на мобиле
+        document.getElementById('mob-fab')?.classList.add('hide');
+
+        // Обновляем заголовок
+        const name = peerData.name || 'User';
+        const ini = name[0].toUpperCase();
+        const bg = UI.avatarBg(name);
+
+        const avatarEl = document.getElementById('chat-peer-avatar');
+        const nameEl = document.getElementById('chat-peer-name');
+        const statusEl = document.getElementById('chat-peer-status');
+        const typingAv = document.getElementById('typing-avatar');
+
+        if (avatarEl) { avatarEl.textContent = ini; avatarEl.style.background = bg; }
+        if (nameEl) nameEl.textContent = name;
+        if (statusEl) statusEl.textContent = 'в сети';
+        if (typingAv) { typingAv.textContent = ini; typingAv.style.background = bg; }
+
+        // Очищаем сообщения
+        const msgs = document.getElementById('msgs');
+        if (msgs) msgs.innerHTML = '';
+
+        // Очищаем инпут
+        const inp = document.getElementById('msg-input');
+        if (inp) {
+            inp.value = '';
+            inp.style.height = 'auto';
+            inp.placeholder = 'Напишите сообщение...';
+        }
         UI.updateSend();
 
-        try { await setupE2E(chatId, peerId) } catch (e) { console.warn('E2E setup fail:', e) }
-        listen(chatId);
+        // E2E
+        try {
+            await setupE2E(chatId, peerId);
+        } catch (e) {
+            console.warn('E2E setup failed:', e);
+        }
+
+        // Слушаем сообщения
+        listenMessages(chatId);
+
+        // Слушаем статус
         watchStatus(peerId);
+
+        // Слушаем typing
         watchTyping(chatId, peerId);
+
+        // Сбрасываем счётчик непрочитанных
         markRead(chatId);
     };
 
-    /* ---- E2E ---- */
+    /* ======== E2E SETUP ======== */
     const setupE2E = async (chatId, peerId) => {
         const pdoc = await db.collection('users').doc(peerId).get();
-        if (!pdoc.exists || !pdoc.data().publicKey) throw new Error('No peer key');
+        if (!pdoc.exists || !pdoc.data().publicKey) {
+            throw new Error('No peer public key');
+        }
         await Crypto.getSharedKey(chatId, Auth.keyPair().privateKey, pdoc.data().publicKey);
     };
 
-    /* ---- Send message ---- */
+    /* ======== SEND TEXT ======== */
     const send = async (text, type = 'text', meta = {}) => {
         if (!_cid || !text.trim()) return;
-        const me = Auth.user().uid;
+        const me = Auth.user()?.uid;
+        if (!me) return;
+
         try {
-            let ct = text, enc = false;
+            let ct = text;
+            let enc = false;
+
+            // Шифруем
             try {
                 const pdoc = await db.collection('users').doc(_pid).get();
-                const key = await Crypto.getSharedKey(_cid, Auth.keyPair().privateKey, pdoc.data().publicKey);
-                ct = await Crypto.encrypt(text, key);
-                enc = true;
-            } catch (e) { console.warn('Encrypt fail:', e) }
+                if (pdoc.exists && pdoc.data().publicKey) {
+                    const key = await Crypto.getSharedKey(
+                        _cid,
+                        Auth.keyPair().privateKey,
+                        pdoc.data().publicKey
+                    );
+                    ct = await Crypto.encrypt(text, key);
+                    enc = true;
+                }
+            } catch (e) {
+                console.warn('Encrypt failed, sending plain:', e);
+            }
 
-            await db.collection('chats').doc(_cid).collection('messages').add({
-                senderId: me, text: ct, type, encrypted: enc,
-                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                status: 'sent', ...meta
-            });
+            // Добавляем сообщение
+            await db.collection('chats').doc(_cid)
+                .collection('messages')
+                .add({
+                    senderId: me,
+                    text: ct,
+                    type,
+                    encrypted: enc,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    status: 'sent',
+                    ...meta
+                });
+
+            // Обновляем чат
+            const preview = type === 'image' ? '📷 Фото'
+                : type === 'file' ? `📄 ${meta.fileName || 'Файл'}`
+                : enc ? '🔒 Зашифровано'
+                : text.substring(0, 60);
 
             await db.collection('chats').doc(_cid).update({
-                lastMessage: enc ? '🔒 Зашифровано' : text.substring(0, 50),
+                lastMessage: preview,
                 lastMessageTime: firebase.firestore.FieldValue.serverTimestamp(),
                 lastSenderId: me,
                 [`unread_${_pid}`]: firebase.firestore.FieldValue.increment(1)
             });
 
-            document.getElementById('msg-input').value = '';
-            document.getElementById('msg-input').style.height = 'auto';
+            // Очищаем инпут
+            const inp = document.getElementById('msg-input');
+            if (inp) {
+                inp.value = '';
+                inp.style.height = 'auto';
+                inp.placeholder = 'Напишите сообщение...';
+            }
             UI.updateSend();
             setTyping(false);
-        } catch (e) { console.error('Send:', e); UI.toast('Ошибка отправки') }
+
+        } catch (e) {
+            console.error('Send error:', e);
+            UI.toast('❌ Ошибка отправки');
+        }
     };
 
-    /* ---- Send file ---- */
+    /* ======== SEND FILE ======== */
     const sendFile = async file => {
         if (!_cid || !file) return;
-        if (file.size > 10 * 1024 * 1024) { UI.toast('Макс. 10 МБ'); return }
+
+        const MAX = 10 * 1024 * 1024;
+        if (file.size > MAX) {
+            UI.toast('❌ Файл слишком большой (макс. 10 МБ)');
+            return;
+        }
+
         UI.toast('📤 Загрузка...');
+
         try {
-            const me = Auth.user().uid;
-            const path = `chats/${_cid}/${Date.now()}_${file.name}`;
+            const me = Auth.user()?.uid;
+            if (!me) return;
+
+            const ext = file.name.split('.').pop();
+            const path = `chats/${_cid}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
             const ab = await file.arrayBuffer();
-            let data = ab, fenc = false;
+
+            let uploadData = ab;
+            let fenc = false;
+
+            // Шифруем файл
             try {
                 const pdoc = await db.collection('users').doc(_pid).get();
-                const key = await Crypto.getSharedKey(_cid, Auth.keyPair().privateKey, pdoc.data().publicKey);
-                data = await Crypto.encryptFile(ab, key);
-                fenc = true;
-            } catch (e) {}
+                if (pdoc.exists && pdoc.data().publicKey) {
+                    const key = await Crypto.getSharedKey(
+                        _cid,
+                        Auth.keyPair().privateKey,
+                        pdoc.data().publicKey
+                    );
+                    uploadData = await Crypto.encryptFile(ab, key);
+                    fenc = true;
+                }
+            } catch (e) {
+                console.warn('File encrypt failed:', e);
+            }
+
+            // Загружаем
             const ref = storage.ref(path);
-            const snap = await ref.put(new Blob([data]));
+            const snap = await ref.put(new Blob([uploadData]));
             const url = await snap.ref.getDownloadURL();
+
             const isImg = file.type.startsWith('image/');
-            await send(isImg ? '📷 Фото' : `📄 ${file.name}`, isImg ? 'image' : 'file', {
-                fileURL: url, fileName: file.name, fileSize: file.size, fileType: file.type, fileEncrypted: fenc
-            });
-            UI.toast('✅ Отправлено');
-        } catch (e) { console.error('File:', e); UI.toast('Ошибка загрузки') }
+
+            await send(
+                isImg ? '📷 Фото' : `📄 ${file.name}`,
+                isImg ? 'image' : 'file',
+                {
+                    fileURL: url,
+                    fileName: file.name,
+                    fileSize: file.size,
+                    fileType: file.type,
+                    fileEncrypted: fenc
+                }
+            );
+
+            UI.toast('✅ Файл отправлен');
+
+        } catch (e) {
+            console.error('File send error:', e);
+            UI.toast('❌ Ошибка загрузки файла');
+        }
     };
 
-    /* ---- Listen ---- */
-    const listen = chatId => {
-        if (_unsub) _unsub();
-        const el = document.getElementById('messages');
-        const scroll = document.getElementById('messages-scroll');
-        let lastD = null;
+    /* ======== LISTEN MESSAGES ======== */
+    const listenMessages = chatId => {
+        if (_unsub) {
+            _unsub();
+            _unsub = null;
+        }
 
-        _unsub = db.collection('chats').doc(chatId).collection('messages')
+        const msgsEl = document.getElementById('msgs');
+        const scroll = document.getElementById('msgs-scroll');
+        let lastDateStr = null;
+
+        _unsub = db.collection('chats').doc(chatId)
+            .collection('messages')
             .orderBy('timestamp', 'asc')
             .onSnapshot(snap => {
-                snap.docChanges().forEach(async ch => {
-                    if (ch.type === 'added') {
-                        const m = ch.doc.data(), id = ch.doc.id;
+                snap.docChanges().forEach(async change => {
+                    if (change.type === 'added') {
+                        const m = change.doc.data();
+                        const id = change.doc.id;
+
+                        // Date separator
                         if (m.timestamp) {
-                            const ds = (m.timestamp.toDate ? m.timestamp.toDate() : new Date()).toDateString();
-                            if (ds !== lastD) {
-                                lastD = ds;
+                            const d = m.timestamp.toDate ? m.timestamp.toDate() : new Date();
+                            const ds = d.toDateString();
+                            if (ds !== lastDateStr) {
+                                lastDateStr = ds;
                                 const sep = document.createElement('div');
                                 sep.className = 'date-sep';
-                                sep.innerHTML = `<span>${UI.fmtDateSep(m.timestamp)}</span>`;
-                                el.appendChild(sep);
+                                sep.innerHTML = `<span>${UI.fmtSep(m.timestamp)}</span>`;
+                                msgsEl?.appendChild(sep);
                             }
                         }
+
+                        // Расшифровываем
                         let txt = m.text;
-                        if (m.encrypted) {
+                        if (m.encrypted && _pid) {
                             try {
                                 const pdoc = await db.collection('users').doc(_pid).get();
-                                const key = await Crypto.getSharedKey(chatId, Auth.keyPair().privateKey, pdoc.data().publicKey);
-                                txt = await Crypto.decrypt(m.text, key);
-                            } catch { txt = '🔒 Не удалось расшифровать' }
+                                if (pdoc.exists && pdoc.data().publicKey) {
+                                    const key = await Crypto.getSharedKey(
+                                        chatId,
+                                        Auth.keyPair().privateKey,
+                                        pdoc.data().publicKey
+                                    );
+                                    txt = await Crypto.decrypt(m.text, key);
+                                }
+                            } catch (e) {
+                                txt = '🔒 Не удалось расшифровать';
+                            }
                         }
-                        el.appendChild(makeMsgEl(id, m, txt));
-                        requestAnimationFrame(() => scroll.scrollTop = scroll.scrollHeight);
-                        if (m.senderId !== Auth.user().uid) markMsgRead(chatId, id);
+
+                        const el = makeMsgEl(id, m, txt);
+                        msgsEl?.appendChild(el);
+
+                        // Скролл вниз
+                        requestAnimationFrame(() => {
+                            if (scroll) scroll.scrollTop = scroll.scrollHeight;
+                        });
+
+                        // Отмечаем прочитанным
+                        const me = Auth.user()?.uid;
+                        if (m.senderId !== me) {
+                            markMsgRead(chatId, id);
+                        }
                     }
-                    if (ch.type === 'modified') {
-                        const se = document.querySelector(`[data-mid="${ch.doc.id}"] .msg-check`);
-                        if (se) setCheck(se, ch.doc.data().status);
+
+                    if (change.type === 'modified') {
+                        const el = document.querySelector(`[data-mid="${change.doc.id}"] .msg-status`);
+                        if (el) setStatus(el, change.doc.data().status);
                     }
-                    if (ch.type === 'removed') {
-                        document.querySelector(`[data-mid="${ch.doc.id}"]`)?.remove();
+
+                    if (change.type === 'removed') {
+                        document.querySelector(`[data-mid="${change.doc.id}"]`)?.remove();
                     }
                 });
+            }, err => {
+                console.error('Messages listener error:', err);
             });
     };
 
-    /* ---- Build message element ---- */
+    /* ======== BUILD MESSAGE ELEMENT ======== */
     const makeMsgEl = (id, m, txt) => {
-        const me = Auth.user().uid;
+        const me = Auth.user()?.uid;
         const mine = m.senderId === me;
-        const div = document.createElement('div');
-        div.className = `msg ${mine ? 'out' : 'in'}`;
-        div.dataset.mid = id;
 
-        let html = '';
-        if (m.replyTo) {
-            html += `<div class="msg-reply"><div class="msg-reply-name">${UI.esc(m.replyToName || '')}</div><div class="msg-reply-text">${UI.esc(m.replyToText || '')}</div></div>`;
-        }
+        const wrap = document.createElement('div');
+        wrap.className = `msg ${mine ? 'out' : 'in'}`;
+        wrap.dataset.mid = id;
+
+        let content = '';
+
         if (m.type === 'image' && m.fileURL) {
-            html += `<img class="msg-img" src="${m.fileURL}" alt="img" loading="lazy">`;
+            content = `<img class="msg-img" src="${m.fileURL}" alt="Фото" loading="lazy">`;
         } else if (m.type === 'file' && m.fileURL) {
-            html += `<a class="msg-file" href="${m.fileURL}" target="_blank" rel="noopener"><span class="msg-file-icon">📄</span><div><div class="msg-file-name">${UI.esc(m.fileName || 'file')}</div><div class="msg-file-size">${fmtSize(m.fileSize)}</div></div></a>`;
+            content = `
+                <a class="msg-file" href="${m.fileURL}" target="_blank" rel="noopener noreferrer">
+                    <span class="msg-file-ic">📄</span>
+                    <div>
+                        <div class="msg-fn">${UI.esc(m.fileName || 'Файл')}</div>
+                        <div class="msg-fs">${fmtSize(m.fileSize)}</div>
+                    </div>
+                </a>`;
         } else {
-            html += `<span class="msg-text">${linkify(UI.esc(txt))}</span>`;
+            content = `<span class="msg-text">${linkify(UI.esc(txt))}</span>`;
         }
 
         const time = UI.fmtTime(m.timestamp);
-        const lock = m.encrypted ? '<span class="msg-lock">🔒</span>' : '';
-        const check = mine ? `<span class="msg-check ${chkClass(m.status)}">${chkIcon(m.status)}</span>` : '';
+        const lock = m.encrypted
+            ? `<span class="msg-lock">🔒</span>`
+            : '';
+        const statusHtml = mine
+            ? `<span class="msg-status ${statusClass(m.status)}">${statusIcon(m.status)}</span>`
+            : '';
 
-        div.innerHTML = `<div class="msg-bubble">${html}<div class="msg-meta">${lock}<span class="msg-time">${time}</span>${check}</div></div>`;
+        wrap.innerHTML = `
+            <div class="msg-bub">
+                ${content}
+                <div class="msg-meta">
+                    ${lock}
+                    <span class="msg-time">${time}</span>
+                    ${statusHtml}
+                </div>
+            </div>`;
 
-        // Long press / right click
-        let pt;
-        div.addEventListener('touchstart', e => { pt = setTimeout(() => { UI.haptic('medium'); UI.showCtx(e.touches[0].clientX, e.touches[0].clientY, { id, text: txt, senderId: m.senderId }) }, 500) });
-        div.addEventListener('touchend', () => clearTimeout(pt));
-        div.addEventListener('touchmove', () => clearTimeout(pt));
-        div.addEventListener('contextmenu', e => { e.preventDefault(); UI.showCtx(e.clientX, e.clientY, { id, text: txt, senderId: m.senderId }) });
+        // Long press (мобиле)
+        let pressTimer;
+        wrap.addEventListener('touchstart', e => {
+            pressTimer = setTimeout(() => {
+                UI.haptic('medium');
+                UI.showCtx(
+                    e.touches[0].clientX,
+                    e.touches[0].clientY,
+                    { id, text: txt, senderId: m.senderId }
+                );
+            }, 500);
+        }, { passive: true });
+        wrap.addEventListener('touchend', () => clearTimeout(pressTimer));
+        wrap.addEventListener('touchmove', () => clearTimeout(pressTimer));
 
-        const img = div.querySelector('.msg-img');
-        if (img) img.onclick = () => UI.openLightbox(img.src);
-
-        return div;
-    };
-
-    const chkClass = s => s === 'read' ? 'c3' : s === 'delivered' ? 'c2' : 'c1';
-    const chkIcon = s => s === 'read' || s === 'delivered' ? '✓✓' : '✓';
-    const setCheck = (el, s) => { el.className = `msg-check ${chkClass(s)}`; el.textContent = chkIcon(s) };
-    const linkify = s => s.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">$1</a>');
-    const fmtSize = b => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
-
-    /* ---- Read ---- */
-    const markRead = cid => { if (cid) db.collection('chats').doc(cid).update({ [`unread_${Auth.user().uid}`]: 0 }).catch(() => {}) };
-    const markMsgRead = (cid, mid) => db.collection('chats').doc(cid).collection('messages').doc(mid).update({ status: 'read' }).catch(() => {});
-
-    /* ---- Typing ---- */
-    const setTyping = v => { if (_cid) db.collection('chats').doc(_cid).update({ [`typing_${Auth.user().uid}`]: v }).catch(() => {}) };
-    const handleTyping = () => {
-        if (!_typing) { _typing = true; setTyping(true) }
-        clearTimeout(_typeTo);
-        _typeTo = setTimeout(() => { _typing = false; setTyping(false) }, 2000);
-    };
-    const watchTyping = (cid, pid) => {
-        db.collection('chats').doc(cid).onSnapshot(doc => {
-            if (doc.exists) document.getElementById('typing-bar').classList.toggle('hidden', !doc.data()[`typing_${pid}`]);
+        // ПК правый клик
+        wrap.addEventListener('contextmenu', e => {
+            e.preventDefault();
+            UI.showCtx(e.clientX, e.clientY, { id, text: txt, senderId: m.senderId });
         });
+
+        // Открытие фото
+        const img = wrap.querySelector('.msg-img');
+        if (img) {
+            img.addEventListener('click', () => UI.openLightbox(img.src));
+        }
+
+        return wrap;
     };
 
-    /* ---- Peer status ---- */
-    const watchStatus = pid => {
-        db.collection('users').doc(pid).onSnapshot(doc => {
-            if (!doc.exists) return;
-            const d = doc.data(), el = document.getElementById('peer-status');
-            if (d.online) { el.textContent = 'в сети'; el.className = 'peer-status' }
-            else { el.textContent = d.lastSeen ? `был(а) ${UI.fmtDate(d.lastSeen)}` : 'не в сети'; el.className = 'peer-status off' }
-        });
+    /* ======== STATUS HELPERS ======== */
+    const statusClass = s => {
+        if (s === 'read') return 's3';
+        if (s === 'delivered') return 's2';
+        return 's1';
     };
 
-    /* ---- Delete ---- */
-    const del = async mid => {
+    const statusIcon = s => {
+        if (s === 'read' || s === 'delivered') return '✓✓';
+        return '✓';
+    };
+
+    const setStatus = (el, s) => {
+        el.className = `msg-status ${statusClass(s)}`;
+        el.textContent = statusIcon(s);
+    };
+
+    /* ======== TEXT HELPERS ======== */
+    const linkify = text => {
+        return text.replace(
+            /(https?:\/\/[^\s<]+)/g,
+            '<a href="$1" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;word-break:break-all;">$1</a>'
+        );
+    };
+
+    const fmtSize = bytes => {
+        if (!bytes) return '';
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    };
+
+    /* ======== READ / STATUS ======== */
+    const markRead = cid => {
+        if (!cid) return;
+        const me = Auth.user()?.uid;
+        if (!me) return;
+        db.collection('chats').doc(cid).update({
+            [`unread_${me}`]: 0
+        }).catch(() => {});
+    };
+
+    const markMsgRead = (cid, mid) => {
+        db.collection('chats').doc(cid)
+            .collection('messages').doc(mid)
+            .update({ status: 'read' })
+            .catch(() => {});
+    };
+
+    /* ======== TYPING ======== */
+    const setTyping = val => {
         if (!_cid) return;
-        if (await UI.modal('Удалить сообщение?', '<p>Это действие нельзя отменить</p>', 'Удалить')) {
-            try { await db.collection('chats').doc(_cid).collection('messages').doc(mid).delete(); UI.toast('Удалено') }
-            catch { UI.toast('Ошибка') }
+        const me = Auth.user()?.uid;
+        if (!me) return;
+        db.collection('chats').doc(_cid).update({
+            [`typing_${me}`]: val
+        }).catch(() => {});
+    };
+
+    const handleTyping = () => {
+        if (!_typing) {
+            _typing = true;
+            setTyping(true);
+        }
+        clearTimeout(_typeTo);
+        _typeTo = setTimeout(() => {
+            _typing = false;
+            setTyping(false);
+        }, 2000);
+    };
+
+    const watchTyping = (chatId, peerId) => {
+        db.collection('chats').doc(chatId).onSnapshot(doc => {
+            if (!doc.exists) return;
+            const typing = doc.data()[`typing_${peerId}`];
+            const bar = document.getElementById('typing-row');
+            if (bar) bar.classList.toggle('hidden', !typing);
+        });
+    };
+
+    /* ======== PEER STATUS ======== */
+    const watchStatus = peerId => {
+        db.collection('users').doc(peerId).onSnapshot(doc => {
+            if (!doc.exists) return;
+            const data = doc.data();
+            const statusEl = document.getElementById('chat-peer-status');
+            const metaEl = document.getElementById('chat-peer-meta');
+            if (!statusEl) return;
+
+            if (data.online) {
+                statusEl.textContent = 'в сети';
+                metaEl?.classList.remove('offline');
+            } else {
+                const last = data.lastSeen ? UI.fmtDate(data.lastSeen) : '';
+                statusEl.textContent = last ? `был(а) ${last}` : 'не в сети';
+                metaEl?.classList.add('offline');
+            }
+        });
+    };
+
+    /* ======== DELETE ======== */
+    const del = async mid => {
+        if (!_cid || !mid) return;
+        const ok = await UI.modal(
+            'Удалить сообщение?',
+            '<p>Это действие нельзя отменить</p>',
+            'Удалить',
+            'Отмена',
+            true
+        );
+        if (!ok) return;
+        try {
+            await db.collection('chats').doc(_cid)
+                .collection('messages').doc(mid).delete();
+            UI.toast('🗑️ Сообщение удалено');
+        } catch (e) {
+            UI.toast('❌ Ошибка удаления');
         }
     };
 
-    const copy = txt => navigator.clipboard.writeText(txt).then(() => UI.toast('Скопировано')).catch(() => UI.toast('Ошибка'));
-
-    const close = () => {
-        if (_unsub) { _unsub(); _unsub = null }
-        if (_cid) setTyping(false);
-        _cid = _pid = _pdata = null;
+    /* ======== COPY ======== */
+    const copy = txt => {
+        navigator.clipboard.writeText(txt)
+            .then(() => UI.toast('📋 Скопировано'))
+            .catch(() => UI.toast('❌ Не удалось скопировать'));
     };
 
-    return { cid, open, send, sendFile, del, copy, handleTyping, close, markRead };
+    /* ======== CLOSE ======== */
+    const close = () => {
+        if (_unsub) {
+            _unsub();
+            _unsub = null;
+        }
+
+        // Останавливаем typing
+        if (_cid && _typing) {
+            setTyping(false);
+        }
+
+        // Показываем FAB снова
+        document.getElementById('mob-fab')?.classList.remove('hide');
+
+        _cid = null;
+        _pid = null;
+        _pdata = null;
+        _typing = false;
+        clearTimeout(_typeTo);
+    };
+
+    return {
+        cid,
+        open,
+        send,
+        sendFile,
+        del,
+        copy,
+        handleTyping,
+        markRead,
+        close
+    };
 })();
