@@ -320,7 +320,7 @@
         const inp = $('user-search-input');
         if (inp) inp.value = '';
         const box = $('user-search-results');
-        if (box) box.innerHTML = '<div class="search-hint"><p>Введите @юзернейм или email</p></div>';
+        if (box) box.innerHTML = '<div class="search-hint"><p>Введите @юзернейм для поиска</p></div>';
     });
 
     $('new-chat-modal')?.addEventListener('click', e => {
@@ -404,14 +404,6 @@
             const t = b.dataset.type;
             if (t === 'photo') $('photo-pick')?.click();
             else if (t === 'file') $('file-pick')?.click();
-            else if (t === 'location') {
-                if (!navigator.geolocation) return UI.toast('Не поддерживается');
-                UI.toast('📍 Определение...');
-                navigator.geolocation.getCurrentPosition(
-                    pos => Chat.send(`📍 https://maps.google.com/maps?q=${pos.coords.latitude},${pos.coords.longitude}`),
-                    () => UI.toast('Не удалось получить')
-                );
-            }
         };
     });
 
@@ -495,11 +487,11 @@
         const saved = localStorage.getItem('pchat-theme') || 'dark';
         document.documentElement.dataset.theme = saved;
         themeTog.checked = saved === 'dark';
-        themeTog.onchange = e => {
+        themeTog.addEventListener('change', e => {
             const t = e.target.checked ? 'dark' : 'light';
             document.documentElement.dataset.theme = t;
             localStorage.setItem('pchat-theme', t);
-        };
+        });
     }
 
     onclick('logout-btn', async () => {
