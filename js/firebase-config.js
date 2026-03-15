@@ -11,7 +11,7 @@ firebase.initializeApp(firebaseConfig);
 
 const auth = firebase.auth();
 const db = firebase.firestore();
-const storage = firebase.storage();
+// const storage = firebase.storage();
 
 // Персистентность для офлайн работы
 db.enablePersistence({ synchronizeTabs: true }).catch(err => {
