@@ -11,15 +11,11 @@ firebase.initializeApp(firebaseConfig);
 
 const auth = firebase.auth();
 const db = firebase.firestore();
+// Firebase Storage УДАЛЁН — используем Яндекс/Telegraph
 // const storage = firebase.storage();
 
-// Персистентность для офлайн работы
 db.enablePersistence({ synchronizeTabs: true }).catch(err => {
-    if (err.code === 'failed-precondition') {
-        console.warn('Firestore persistence: multiple tabs open');
-    } else if (err.code === 'unimplemented') {
-        console.warn('Firestore persistence: not supported');
-    }
+    console.warn('Persistence:', err.code);
 });
 
 console.log('%c PCHAT Firebase OK', 'color:#22d3ae;font-weight:bold');
