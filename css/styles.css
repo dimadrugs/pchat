@@ -853,3 +853,24 @@ a { color: var(--accent); text-decoration: none; }
     .chat-view.hidden { display: none !important; }
     .chat-view { display: flex; } /* показан нормально */
 }
+/* DRAG & DROP */
+.chat-view.drag-over::after {
+    content: '📂 Отпустите файл для отправки';
+    position: absolute;
+    inset: 0;
+    background: rgba(34, 211, 174, 0.15);
+    border: 3px dashed var(--accent);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--accent);
+    z-index: 999;
+    pointer-events: none;
+}
+
+.chat-view.drag-over .composer-area {
+    opacity: 0.3;
+}
