@@ -20,7 +20,7 @@ const Contacts = (() => {
             return;
         }
 
-        box.innerHTML = '<div class="search-hint"><p> Поиск...</p></div>';
+        box.innerHTML = '<div class="search-hint"><p>🔍 Поиск...</p></div>';
 
         try {
             const results = new Map();
@@ -29,36 +29,49 @@ const Contacts = (() => {
 
             const clean = q.startsWith('@') ? q.slice(1).toLowerCase() : q.toLowerCase();
 
+            // Точный поиск по username
             try {
-                const exactSnap = await db.collection('users').where('username', '==', clean).limit(1).get();
-                exactSnap.forEach(d => { if (d.id !== me) results.set(d.id, d.data()); });
-            } catch (e) { console.warn('Exact search failed:', e); }
+                const snap = await db.collection('users').where('username', '==', clean).limit(5).get();
+                snap.forEach(d => { if (d.id !== me) results.set(d.id, d.data()); });
+            } catch (e) {}
 
+            // Префиксный поиск
             if (clean.length >= 2) {
                 try {
-                    const prefixSnap = await db.collection('users').where('username', '>=', clean).where('username', '<=', clean + '\uf8ff').limit(10).get();
-                    prefixSnap.forEach(d => { if (d.id !== me) results.set(d.id, d.data()); });
-                } catch (e) { console.warn('Prefix search failed:', e); }
+                    const snap = await db.collection('users')
+                        .where('username', '>=', clean)
+                        .where('username', '<=', clean + '\uf8ff')
+                        .limit(5).get();
+                    snap.forEach(d => { if (d.id !== me) results.set(d.id, d.data()); });
+                } catch (e) {}
             }
 
+            // Поиск по email
             if (q.includes('@') && q.includes('.') && !q.startsWith('@')) {
                 try {
-                    const emailSnap = await db.collection('users').where('email', '>=', q.toLowerCase()).where('email', '<=', q.toLowerCase() + '\uf8ff').limit(5).get();
-                    emailSnap.forEach(d => { if (d.id !== me) results.set(d.id, d.data()); });
-                } catch (e) { console.warn('Email search failed:', e); }
+                    const snap = await db.collection('users')
+                        .where('email', '>=', q.toLowerCase())
+                        .where('email', '<=', q.toLowerCase() + '\uf8ff')
+                        .limit(5).get();
+                    snap.forEach(d => { if (d.id !== me) results.set(d.id, d.data()); });
+                } catch (e) {}
             }
 
+            // Поиск по имени
             if (!q.startsWith('@') && clean.length >= 2) {
                 try {
-                    const nameSnap = await db.collection('users').where('name', '>=', q).where('name', '<=', q + '\uf8ff').limit(5).get();
-                    nameSnap.forEach(d => { if (d.id !== me) results.set(d.id, d.data()); });
-                } catch (e) { console.warn('Name search failed:', e); }
+                    const snap = await db.collection('users')
+                        .where('name', '>=', q)
+                        .where('name', '<=', q + '\uf8ff')
+                        .limit(5).get();
+                    snap.forEach(d => { if (d.id !== me) results.set(d.id, d.data()); });
+                } catch (e) {}
             }
 
             box.innerHTML = '';
 
             if (results.size === 0) {
-                box.innerHTML = '<div class="search-hint"><p>Никого не найдено</p><span>Проверьте юзернейм и попробуйте снова</span></div>';
+                box.innerHTML = '<div class="search-hint"><p>Никого не найдено</p></div>';
                 return;
             }
 
@@ -78,15 +91,17 @@ const Contacts = (() => {
         const ini = (data.name || data.email || 'U')[0].toUpperCase();
         const un = data.username ? `@${data.username}` : data.email || '';
         const bg = UI.avatarBg(data.name || data.email || '');
+        const hasAvatar = !!data.avatarURL;
+
         el.innerHTML = `
-            <div class="sri-avatar" style="background:${bg}">${ini}</div>
+            <div class="sri-avatar" style="${hasAvatar ? '' : 'background:' + bg}">
+                ${hasAvatar ? `<img src="${data.avatarURL}" alt="">` : ini}
+            </div>
             <div class="sri-info">
                 <div class="sri-name">${UI.esc(data.name || 'User')}</div>
                 <div class="sri-un">${UI.esc(un)}</div>
-            </div>
-            <div class="sri-arrow">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
             </div>`;
+
         el.onclick = () => startChat(uid, data);
         return el;
     };
@@ -95,24 +110,31 @@ const Contacts = (() => {
         const me = Auth.user()?.uid;
         if (!me) return;
         const box = $('user-search-results');
-        if (box) box.innerHTML = '<div class="search-hint"><p> Открытие чата...</p></div>';
+        if (box) box.innerHTML = '<div class="search-hint"><p>⏳ Открытие чата...</p></div>';
+
         try {
             const chatId = [me, uid].sort().join('_');
             const chatDoc = await db.collection('chats').doc(chatId).get();
+
             if (!chatDoc.exists) {
+                const myProfile = Auth.profile();
                 await db.collection('chats').doc(chatId).set({
                     participants: [me, uid],
                     names: {
-                        [me]: Auth.profile()?.name || 'User',
+                        [me]: myProfile?.name || 'User',
                         [uid]: data.name || 'User'
                     },
                     usernames: {
-                        [me]: Auth.profile()?.username || '',
+                        [me]: myProfile?.username || '',
                         [uid]: data.username || ''
                     },
                     emails: {
-                        [me]: Auth.profile()?.email || '',
+                        [me]: myProfile?.email || '',
                         [uid]: data.email || ''
+                    },
+                    avatars: {
+                        [me]: myProfile?.avatarURL || '',
+                        [uid]: data.avatarURL || ''
                     },
                     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                     lastMessage: '',
@@ -121,16 +143,17 @@ const Contacts = (() => {
                     [`unread_${uid}`]: 0
                 });
             }
+
             $('new-chat-modal')?.classList.add('hidden');
-            const inp = $('user-search-input');
-            if (inp) inp.value = '';
+            const inp = $('user-search-input'); if (inp) inp.value = '';
             if (box) box.innerHTML = '';
+
             Chat.open(chatId, uid, data);
             UI.showChat();
-            if (window.innerWidth <= 768) UI.closeSidebar();
+
         } catch (e) {
             console.error('Start chat error:', e);
-            UI.toast(' Ошибка: ' + e.message);
+            UI.toast('❌ ' + e.message);
         }
     };
 
