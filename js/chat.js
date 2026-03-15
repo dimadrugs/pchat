@@ -5,6 +5,7 @@ const Chat = (() => {
     let _unsub = null;
     let _typeTo = null;
     let _typing = false;
+    let _pendingIds = new Set(); // отслеживаем сообщения которые мы добавили оптимистично
 
     const cid = () => _cid;
 
@@ -12,6 +13,7 @@ const Chat = (() => {
         _cid = chatId;
         _pid = peerId;
         _pdata = peerData;
+        _pendingIds.clear();
 
         document.getElementById('mob-fab')?.classList.add('hide');
 
@@ -40,6 +42,7 @@ const Chat = (() => {
 
         listenMessages(chatId);
         watchStatus(peerId);
+        watchTyping(chatId, peerId);
         markRead(chatId);
     };
 
@@ -56,8 +59,30 @@ const Chat = (() => {
         }
         UI.updateSend();
 
+        // Оптимистичное добавление — показываем сообщение СРАЗУ
+        const tempId = 'temp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+        const nowTime = new Date();
+        const tempMsg = {
+            senderId: me,
+            text: text,
+            type,
+            status: 'sent',
+            timestamp: null, // нет серверного времени пока
+            ...meta
+        };
+
+        const msgsEl = document.getElementById('msgs');
+        const scroll = document.getElementById('msgs-scroll');
+        const el = makeMsgEl(tempId, tempMsg, text);
+        msgsEl?.appendChild(el);
+        _pendingIds.add(tempId);
+
+        requestAnimationFrame(() => {
+            if (scroll) scroll.scrollTop = scroll.scrollHeight;
+        });
+
         try {
-            await db.collection('chats').doc(_cid)
+            const docRef = await db.collection('chats').doc(_cid)
                 .collection('messages').add({
                     senderId: me,
                     text: text,
@@ -67,6 +92,11 @@ const Chat = (() => {
                     status: 'sent',
                     ...meta
                 });
+
+            // Убираем временный элемент — реальный придёт через onSnapshot
+            const tempEl = document.querySelector(`[data-mid="${tempId}"]`);
+            if (tempEl) tempEl.remove();
+            _pendingIds.delete(tempId);
 
             const preview = type === 'image' ? '📷 Фото'
                 : type === 'file' ? `📎 ${meta.fileName || 'Файл'}`
@@ -86,12 +116,17 @@ const Chat = (() => {
         } catch (e) {
             console.error('Send error:', e);
             UI.toast('❌ Ошибка отправки');
+            // Помечаем временное сообщение ошибкой
+            const tempEl = document.querySelector(`[data-mid="${tempId}"]`);
+            if (tempEl) {
+                tempEl.style.opacity = '0.5';
+            }
         }
     };
 
     const sendFile = async file => {
         if (!_cid || !file) return;
-        if (file.size > 10 * 1024 * 1024) { UI.toast('⚠ Макс. 10 МБ'); return; }
+        if (file.size > 25 * 1024 * 1024) { UI.toast('⚠ Макс. 25 МБ'); return; }
         UI.toast('📤 Загрузка...');
         try {
             const me = Auth.user()?.uid;
@@ -104,7 +139,14 @@ const Chat = (() => {
             const url = await snap.ref.getDownloadURL();
 
             const isImg = file.type.startsWith('image/');
-            await send(isImg ? '📷 Фото' : `📎 ${file.name}`, isImg ? 'image' : 'file', {
+            const isVideo = file.type.startsWith('video/');
+
+            let msgType = 'file';
+            let msgText = `📎 ${file.name}`;
+            if (isImg) { msgType = 'image'; msgText = '📷 Фото'; }
+            else if (isVideo) { msgType = 'video'; msgText = '🎬 Видео'; }
+
+            await send(msgText, msgType, {
                 fileURL: url, fileName: file.name,
                 fileSize: file.size, fileType: file.type, fileEncrypted: false
             });
@@ -130,6 +172,11 @@ const Chat = (() => {
                     if (change.type === 'added') {
                         const m = change.doc.data();
                         const id = change.doc.id;
+
+                        // Если это сообщение уже показано оптимистично — пропускаем дублирование
+                        // Нет, мы уже удаляем tempEl в send(). Но на всякий случай:
+                        // Проверяем нет ли уже элемента с этим id
+                        if (document.querySelector(`[data-mid="${id}"]`)) return;
 
                         if (m.timestamp) {
                             const d = m.timestamp.toDate ? m.timestamp.toDate() : new Date();
@@ -187,7 +234,7 @@ const Chat = (() => {
         wrap.className = `msg ${mine ? 'out' : 'in'}`;
         wrap.dataset.mid = id;
 
-        // Время: если timestamp ещё не пришёл (serverTimestamp), показываем текущее
+        // Время: если нет серверного timestamp — показываем текущее
         const time = m.timestamp ? UI.fmtTime(m.timestamp) : UI.fmtTimeNow();
         const statusHtml = mine
             ? `<span class="msg-status ${statusClass(m.status)}">${statusIcon(m.status)}</span>`
@@ -199,18 +246,18 @@ const Chat = (() => {
         if (m.type === 'voice' && m.fileURL) {
             const bub = document.createElement('div');
             bub.className = 'msg-bub';
-
             const voiceEl = Voice.makeVoiceEl(m);
             bub.appendChild(voiceEl);
-
             const footer = document.createElement('div');
             footer.className = 'msg-footer';
             footer.innerHTML = `<span class="msg-time">${time}</span>${statusHtml}`;
             bub.appendChild(footer);
-
             wrap.appendChild(bub);
             addLongPress(wrap, id, '🎤 Голосовое', m.senderId);
             return wrap;
+        }
+        else if (m.type === 'video' && m.fileURL) {
+            content = `<video class="msg-video" src="${m.fileURL}" controls preload="metadata" playsinline></video>`;
         }
         else if (m.type === 'image' && m.fileURL) {
             content = `<img class="msg-img" src="${m.fileURL}" alt="Фото" loading="lazy">`;
@@ -337,6 +384,10 @@ const Chat = (() => {
 
     const del = async mid => {
         if (!_cid || !mid) return;
+        if (mid.startsWith('temp_')) {
+            document.querySelector(`[data-mid="${mid}"]`)?.remove();
+            return;
+        }
         const ok = await UI.modal('Удалить сообщение?', '<p>Это нельзя отменить</p>', 'Удалить', 'Отмена', true);
         if (!ok) return;
         try {
@@ -357,6 +408,7 @@ const Chat = (() => {
         document.getElementById('mob-fab')?.classList.remove('hide');
         _cid = null; _pid = null; _pdata = null;
         _typing = false;
+        _pendingIds.clear();
         clearTimeout(_typeTo);
     };
 
