@@ -1,7 +1,7 @@
 const UI = (() => {
     const $ = id => document.getElementById(id);
 
-    /* TOAST */
+    /* ========== TOAST ========== */
     let _tt;
     const toast = (msg, ms = 3000) => {
         const el = $('toast');
@@ -12,7 +12,7 @@ const UI = (() => {
         _tt = setTimeout(() => el.classList.remove('on'), ms);
     };
 
-    /* MODAL */
+    /* ========== MODAL ========== */
     const modal = (title, html, yesText = 'OK', noText = 'Отмена', dangerYes = false) => new Promise(ok => {
         const m = $('mini-modal'), t = $('mm-title'), b = $('mm-body'), y = $('mm-yes'), n = $('mm-no');
         if (!m || !t || !b || !y || !n) return ok(false);
@@ -22,7 +22,11 @@ const UI = (() => {
         n.textContent = noText;
         y.className = 'mm-btn yes' + (dangerYes ? ' danger' : '');
         m.classList.remove('hidden');
-        const done = v => { m.classList.add('hidden'); y.onclick = null; n.onclick = null; m.onclick = null; ok(v); };
+        const done = v => {
+            m.classList.add('hidden');
+            y.onclick = null; n.onclick = null; m.onclick = null;
+            ok(v);
+        };
         y.onclick = () => done(true);
         n.onclick = () => done(false);
         m.onclick = e => { if (e.target === m) done(false); };
@@ -32,37 +36,44 @@ const UI = (() => {
         const m = $('mini-modal'), t = $('mm-title'), b = $('mm-body'), y = $('mm-yes'), n = $('mm-no');
         if (!m || !t || !b || !y || !n) return ok(null);
         t.textContent = title;
-        b.innerHTML = `<input id="mminp" placeholder="${ph}" value="${UI.esc(def)}">`;
+        b.innerHTML = `<input id="mminp" placeholder="${ph}" value="${esc(def)}">`;
         y.textContent = 'Сохранить';
         n.textContent = 'Отмена';
         y.className = 'mm-btn yes';
         m.classList.remove('hidden');
         const inp = $('mminp');
         if (inp) setTimeout(() => inp.focus(), 100);
-        const done = v => { m.classList.add('hidden'); y.onclick = null; n.onclick = null; m.onclick = null; ok(v); };
+        const done = v => {
+            m.classList.add('hidden');
+            y.onclick = null; n.onclick = null; m.onclick = null;
+            ok(v);
+        };
         y.onclick = () => done(inp ? inp.value.trim() : null);
         n.onclick = () => done(null);
         m.onclick = e => { if (e.target === m) done(null); };
         if (inp) inp.onkeydown = e => { if (e.key === 'Enter') done(inp.value.trim()); };
     });
 
-    /* CHAT VIEW */
+    /* ========== CHAT VIEW ========== */
     const showChat = () => {
         const cv = $('chat-view');
         const ws = $('welcome-screen');
         if (!cv) return;
 
-        cv.classList.remove('hidden');
-
         if (window.innerWidth <= 768) {
-            // Мобилка: нужны два rAF чтобы transition сработал
+            // Мобилка: убираем hidden, добавляем slide-in
+            // Важно: на мобилке hidden = transform+visibility, не display:none
+            cv.classList.remove('hidden');
+
+            // Два rAF — браузеру нужно время применить removal of hidden
             requestAnimationFrame(() => {
                 requestAnimationFrame(() => {
                     cv.classList.add('slide-in');
                 });
             });
         } else {
-            // ПК: просто показываем
+            // ПК: показываем нормально
+            cv.classList.remove('hidden');
             if (ws) ws.classList.add('hidden');
         }
     };
@@ -73,10 +84,16 @@ const UI = (() => {
         if (!cv) return;
 
         if (window.innerWidth <= 768) {
+            // Мобилка: убираем slide-in, добавляем hidden
             cv.classList.remove('slide-in');
-            setTimeout(() => cv.classList.add('hidden'), 320);
+            // Небольшая задержка чтобы transition отработал
+            setTimeout(() => {
+                cv.classList.add('hidden');
+            }, 320);
         } else {
+            // ПК: скрываем через display:none
             cv.classList.add('hidden');
+            cv.classList.remove('slide-in');
             if (ws) ws.classList.remove('hidden');
         }
     };
@@ -84,33 +101,31 @@ const UI = (() => {
     const openSidebar = () => {};
     const closeSidebar = () => {};
 
-    /* LIGHTBOX */
+    /* ========== LIGHTBOX ========== */
     const openLightbox = src => {
         const img = $('lb-img'), lb = $('lightbox');
         if (img) img.src = src;
         if (lb) lb.classList.remove('hidden');
     };
-
     const closeLightbox = () => $('lightbox')?.classList.add('hidden');
 
-    /* CONTEXT MENU */
+    /* ========== CONTEXT MENU ========== */
     const showCtx = (x, y, data) => {
         const m = $('ctx');
         if (!m) return;
         m.classList.remove('hidden');
-        m.style.left = Math.min(x, window.innerWidth - 200) + 'px';
+        m.style.left = Math.min(x, window.innerWidth - 190) + 'px';
         m.style.top = Math.min(y, window.innerHeight - 120) + 'px';
         m.dataset.mid = data.id || '';
         m.dataset.txt = data.text || '';
         m.dataset.sid = data.senderId || '';
     };
-
     const hideCtx = () => $('ctx')?.classList.add('hidden');
 
-    /* EMOJI */
+    /* ========== EMOJI ========== */
     const EMOJIS = {
         '😀': ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','🥲','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','😐','😑','😶','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴','😵','🤯','🤠','🥳','🥸','😎','🤓','🧐','😕','😟','🙁','😮','😯','😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','👿','💀','☠','💩','🤡','👹','👺','👻','👽','👾','🤖'],
-        '❤️': ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','♥️','💌','💋','👄','👋','🤚','🖐','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👍','👎','✊','👊','🤛','🤜','👏','🙌','👐','🤲','🤝','🙏','✍️','💪','🦾','🦿','🦵','🦶','👂','🦻','👃','👀','👁','👅','👄'],
+        '❤️': ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','♥️','💌','💋','👋','🤚','🖐','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👍','👎','✊','👊','🤛','🤜','👏','🙌','👐','🤲','🤝','🙏','✍️','💪','🦾','🦿','🦵','🦶','👂','🦻','👃','👀','👁','👅','👄'],
         '🐶': ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐻‍❄️','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🐔','🐧','🐦','🐤','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🐛','🦋','🐌','🐞','🐜','🦟','🦗','🕷','🦂','🐢','🐍','🦎','🐙','🦑','🦐','🦞','🦀','🐡','🐠','🐟','🐬','🐳','🐋','🦈','🐊','🐅','🐆','🦓','🦍','🐘','🦛','🦏','🐪','🐫','🦒','🦘','🦬','🐃','🐂','🐄','🐎','🐖','🐏','🐑','🦙','🐐','🦌','🐕','🐩','🦮','🐈','🐈‍⬛','🐓','🦃','🦤','🦚','🦜','🦢','🦩','🕊','🐇','🦝','🦨','🦡','🦫','🦦','🦥','🐁','🐀','🐿','🦔'],
         '🍎': ['🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦','🥬','🥒','🌶','🫑','🌽','🥕','🧄','🧅','🥔','🍠','🥐','🥯','🍞','🥖','🥨','🧀','🥚','🍳','🧈','🥞','🧇','🥓','🥩','🍗','🍖','🌭','🍔','🍟','🍕','🌮','🌯','🥗','🥘','🍝','🍜','🍲','🍛','🍣','🍱','🥟','🍤','🍙','🍚','🍘','🍥','🥮','🍢','🍡','🍧','🍨','🍦','🥧','🧁','🍰','🎂','🍮','🍭','🍬','🍫','🍿','🍩','🍪','🌰','🥜','🍯','🥛','🍼','🫖','☕','🍵','🧃','🥤','🧋','🍶','🍺','🍻','🥂','🍷','🥃','🍸','🍹','🧉','🍾'],
         '⚽': ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🏓','🏸','🥊','🥋','🎽','🛹','🛼','🛷','⛸','🥌','🎿','⛷','🏂','🪂','🏋️','🤼','🤸','🤺','⛹️','🏇','🧘','🏄','🏊','🤽','🚣','🧗','🚵','🚴','🏆','🥇','🥈','🥉','🏅','🎖','🎪','🎭','🎨','🎬','🎤','🎧','🎼','🎹','🥁','🎷','🎺','🎸','🪕','🎻','🎲','♟','🎯','🎳','🎮','🎰','🧩'],
@@ -150,7 +165,7 @@ const UI = (() => {
         renderEmojis(Object.keys(EMOJIS)[0]);
     };
 
-    /* TEXTAREA */
+    /* ========== TEXTAREA ========== */
     const autoResize = ta => {
         if (!ta) return;
         ta.style.height = 'auto';
@@ -163,7 +178,7 @@ const UI = (() => {
         if (btn) btn.disabled = !(inp && inp.value.trim());
     };
 
-    /* PASSWORD STRENGTH */
+    /* ========== PASSWORD STRENGTH ========== */
     const pwStrength = pw => {
         let s = 0;
         if (pw.length >= 8) s += 25;
@@ -182,7 +197,7 @@ const UI = (() => {
         if (label) { label.textContent = labels[idx]; label.style.color = colors[idx]; }
     };
 
-    /* AVATAR */
+    /* ========== AVATAR ========== */
     const avatarBg = name => {
         const grads = [
             'linear-gradient(135deg,#22d3ae,#38bdf8)',
@@ -200,7 +215,7 @@ const UI = (() => {
         return grads[Math.abs(h) % grads.length];
     };
 
-    /* TIME */
+    /* ========== TIME ========== */
     const fmtTime = ts => {
         if (!ts) return '';
         const d = ts.toDate ? ts.toDate() : new Date(ts);
@@ -232,7 +247,7 @@ const UI = (() => {
         return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
     };
 
-    /* MISC */
+    /* ========== MISC ========== */
     const haptic = t => {
         if (navigator.vibrate) navigator.vibrate(t === 'light' ? 10 : 25);
     };
