@@ -39,12 +39,63 @@ const Chat = (() => {
         if (inp) { inp.value = ''; inp.style.height = 'auto'; inp.placeholder = 'Напишите сообщение...'; }
         UI.updateSend();
 
+        // Drag & Drop
+        _initDragDrop();
+
         listenMessages(chatId);
         watchStatus(peerId);
         watchTyping(chatId, peerId);
         markRead(chatId);
     };
 
+    // ==================== DRAG & DROP ====================
+    const _initDragDrop = () => {
+        const chatView = document.getElementById('chat-view');
+        if (!chatView) return;
+
+        // Убираем старые обработчики
+        chatView.removeEventListener('dragover', _onDragOver);
+        chatView.removeEventListener('dragleave', _onDragLeave);
+        chatView.removeEventListener('drop', _onDrop);
+
+        chatView.addEventListener('dragover', _onDragOver);
+        chatView.addEventListener('dragleave', _onDragLeave);
+        chatView.addEventListener('drop', _onDrop);
+    };
+
+    const _onDragOver = e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const chatView = document.getElementById('chat-view');
+        if (chatView && !chatView.classList.contains('drag-over')) {
+            chatView.classList.add('drag-over');
+        }
+    };
+
+    const _onDragLeave = e => {
+        e.preventDefault();
+        // Проверяем что курсор реально вышел за пределы chat-view
+        const chatView = document.getElementById('chat-view');
+        if (chatView && !chatView.contains(e.relatedTarget)) {
+            chatView.classList.remove('drag-over');
+        }
+    };
+
+    const _onDrop = async e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const chatView = document.getElementById('chat-view');
+        chatView?.classList.remove('drag-over');
+
+        const files = Array.from(e.dataTransfer?.files || []);
+        if (!files.length) return;
+
+        for (const file of files) {
+            await sendFile(file);
+        }
+    };
+
+    // ==================== SEND TEXT ====================
     const send = async (text, type = 'text', meta = {}) => {
         if (!_cid) return;
         const t = typeof text === 'string' ? text.trim() : '';
@@ -61,20 +112,17 @@ const Chat = (() => {
         UI.updateSend();
         setTyping(false);
 
-        // Оптимистичный рендер — показываем сразу
+        // Оптимистичный рендер
         const tempId = 'tmp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
         const msgsEl = document.getElementById('msgs');
         const scroll = document.getElementById('msgs-scroll');
 
-        const tempMsgData = {
+        const tempData = {
             senderId: me,
             text: type === 'text' ? t : text,
-            type,
-            status: 'sent',
-            timestamp: null,
-            ...meta
+            type, status: 'sent', timestamp: null, ...meta
         };
-        const tempEl = makeMsgEl(tempId, tempMsgData);
+        const tempEl = makeMsgEl(tempId, tempData);
         if (msgsEl) msgsEl.appendChild(tempEl);
         requestAnimationFrame(() => { if (scroll) scroll.scrollTop = scroll.scrollHeight; });
 
@@ -83,13 +131,11 @@ const Chat = (() => {
                 senderId: me,
                 text: type === 'text' ? t : text,
                 type,
-                encrypted: false,
                 timestamp: firebase.firestore.FieldValue.serverTimestamp(),
                 status: 'sent',
                 ...meta
             });
 
-            // Убираем временный — придёт через onSnapshot
             tempEl.remove();
 
             const preview = type === 'image' ? '📷 Фото'
@@ -104,6 +150,7 @@ const Chat = (() => {
                 lastSenderId: me,
                 [`unread_${_pid}`]: firebase.firestore.FieldValue.increment(1)
             });
+
         } catch (e) {
             console.error('Send error:', e);
             UI.toast('❌ Ошибка отправки');
@@ -111,56 +158,52 @@ const Chat = (() => {
         }
     };
 
+    // ==================== SEND FILE ====================
     const sendFile = async (file) => {
         if (!_cid || !file) return;
-        const maxMB = 100;
-        if (file.size > maxMB * 1024 * 1024) { UI.toast(`⚠ Макс. ${maxMB} МБ`); return; }
 
-        UI.toast('📤 Загрузка...');
+        const sizeMB = file.size / 1024 / 1024;
+        const MAX_MB = 40;
+
+        if (sizeMB > MAX_MB) {
+            UI.toast(`⚠ Файл слишком большой: ${sizeMB.toFixed(1)}МБ. Макс ${MAX_MB}МБ`);
+            return;
+        }
+
+        const isImg = file.type.startsWith('image/');
+        const isVid = file.type.startsWith('video/');
+        const isAud = file.type.startsWith('audio/');
+
+        UI.toast(`📤 Загрузка ${file.name}...`);
+
         try {
-            const me = Auth.user()?.uid;
-            if (!me) return;
-
-            const ext = file.name.split('.').pop().toLowerCase();
-            const path = `chats/${_cid}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-            const ref = storage.ref(path);
-
-            // Прогресс загрузки
-            const uploadTask = ref.put(file);
-            await new Promise((resolve, reject) => {
-                uploadTask.on('state_changed',
-                    snap => {
-                        const pct = Math.round(snap.bytesTransferred / snap.totalBytes * 100);
-                        UI.toast(`📤 Загрузка ${pct}%`);
-                    },
-                    reject,
-                    resolve
-                );
+            // Используем Storage.upload — НЕ Firebase Storage
+            const result = await Storage.upload(file, pct => {
+                if (pct > 0 && pct < 100) UI.toast(`📤 ${pct}% — ${file.name}`);
             });
-
-            const url = await ref.getDownloadURL();
-
-            const isImg = file.type.startsWith('image/');
-            const isVid = file.type.startsWith('video/');
 
             let msgType = 'file';
             let msgText = `📎 ${file.name}`;
             if (isImg) { msgType = 'image'; msgText = '📷 Фото'; }
             else if (isVid) { msgType = 'video'; msgText = '🎬 Видео'; }
+            else if (isAud) { msgType = 'voice'; msgText = '🎤 Аудио'; }
 
             await send(msgText, msgType, {
-                fileURL: url,
+                fileURL: result.url,
                 fileName: file.name,
                 fileSize: file.size,
-                fileType: file.type
+                fileType: file.type,
+                isBase64: result.isBase64 || false
             });
+
             UI.toast('✅ Отправлено');
         } catch (e) {
-            console.error('File upload error:', e);
-            UI.toast('❌ Ошибка загрузки: ' + e.message);
+            console.error('sendFile error:', e);
+            UI.toast('❌ ' + e.message);
         }
     };
 
+    // ==================== LISTEN MESSAGES ====================
     const listenMessages = (chatId) => {
         if (_unsub) { _unsub(); _unsub = null; }
         const msgsEl = document.getElementById('msgs');
@@ -177,10 +220,8 @@ const Chat = (() => {
                         const m = change.doc.data();
                         const id = change.doc.id;
 
-                        // Не дублируем если уже есть
                         if (document.querySelector(`[data-mid="${id}"]`)) return;
 
-                        // Дата-разделитель
                         if (m.timestamp) {
                             const d = m.timestamp.toDate();
                             const ds = d.toDateString();
@@ -195,7 +236,9 @@ const Chat = (() => {
 
                         const el = makeMsgEl(id, m);
                         msgsEl?.appendChild(el);
-                        requestAnimationFrame(() => { if (scroll) scroll.scrollTop = scroll.scrollHeight; });
+                        requestAnimationFrame(() => {
+                            if (scroll) scroll.scrollTop = scroll.scrollHeight;
+                        });
 
                         const me = Auth.user()?.uid;
                         if (m.senderId !== me) {
@@ -210,20 +253,21 @@ const Chat = (() => {
                             }
                         }
                     }
+
                     if (change.type === 'modified') {
                         const el = document.querySelector(`[data-mid="${change.doc.id}"] .msg-status`);
                         if (el) setStatusEl(el, change.doc.data().status);
                     }
+
                     if (change.type === 'removed') {
                         document.querySelector(`[data-mid="${change.doc.id}"]`)?.remove();
                     }
                 });
                 isFirst = false;
-            }, err => {
-                console.error('Messages error:', err);
-            });
+            }, err => console.error('Messages error:', err));
     };
 
+    // ==================== MAKE MESSAGE ELEMENT ====================
     const makeMsgEl = (id, m) => {
         const me = Auth.user()?.uid;
         const mine = m.senderId === me;
@@ -233,10 +277,12 @@ const Chat = (() => {
         wrap.dataset.mid = id;
 
         const time = m.timestamp ? UI.fmtTime(m.timestamp) : UI.fmtTimeNow();
-        const statusHtml = mine ? `<span class="msg-status ${statusCls(m.status)}">${statusIcon(m.status)}</span>` : '';
-
+        const statusHtml = mine
+            ? `<span class="msg-status ${statusCls(m.status)}">${statusIcon(m.status)}</span>`
+            : '';
         const footer = `<div class="msg-footer"><span class="msg-time">${time}</span>${statusHtml}</div>`;
 
+        // Голосовое
         if (m.type === 'voice' && m.fileURL) {
             const bub = document.createElement('div');
             bub.className = 'msg-bub';
@@ -247,30 +293,68 @@ const Chat = (() => {
             return wrap;
         }
 
+        // Фото
         if (m.type === 'image' && m.fileURL) {
-            wrap.innerHTML = `<div class="msg-bub img-only"><img class="msg-img" src="${m.fileURL}" loading="lazy" alt="Фото">${footer}</div>`;
+            wrap.innerHTML = `
+                <div class="msg-bub img-only">
+                    <img class="msg-img" src="${m.fileURL}" loading="lazy" alt="Фото">
+                    ${footer}
+                </div>`;
             wrap.querySelector('.msg-img')?.addEventListener('click', () => UI.openLightbox(m.fileURL));
             addCtx(wrap, id, '📷 Фото', m.senderId);
             return wrap;
         }
 
+        // Видео
         if (m.type === 'video' && m.fileURL) {
-            wrap.innerHTML = `<div class="msg-bub"><video class="msg-video" src="${m.fileURL}" controls preload="metadata" playsinline></video>${footer}</div>`;
+            wrap.innerHTML = `
+                <div class="msg-bub">
+                    <video class="msg-video" src="${m.fileURL}" controls preload="metadata" playsinline></video>
+                    ${footer}
+                </div>`;
             addCtx(wrap, id, '🎬 Видео', m.senderId);
             return wrap;
         }
 
+        // Файл
         if (m.type === 'file' && m.fileURL) {
-            wrap.innerHTML = `<div class="msg-bub"><a class="msg-file" href="${m.fileURL}" target="_blank" rel="noopener"><span class="msg-file-ic">📄</span><div><div class="msg-fn">${UI.esc(m.fileName || 'Файл')}</div><div class="msg-fs">${fmtSize(m.fileSize)}</div></div></a>${footer}</div>`;
+            const size = fmtSize(m.fileSize);
+            wrap.innerHTML = `
+                <div class="msg-bub">
+                    <a class="msg-file" href="${m.fileURL}" target="_blank" rel="noopener" download="${UI.esc(m.fileName || 'file')}">
+                        <span class="msg-file-ic">${getFileIcon(m.fileType || '')}</span>
+                        <div>
+                            <div class="msg-fn">${UI.esc(m.fileName || 'Файл')}</div>
+                            <div class="msg-fs">${size}</div>
+                        </div>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;opacity:0.6">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                    </a>
+                    ${footer}
+                </div>`;
             addCtx(wrap, id, m.fileName || 'Файл', m.senderId);
             return wrap;
         }
 
-        // Обычный текст
+        // Текст
         const txt = m.text || '';
         wrap.innerHTML = `<div class="msg-bub"><span class="msg-text">${linkify(UI.esc(txt))}</span>${footer}</div>`;
         addCtx(wrap, id, txt, m.senderId);
         return wrap;
+    };
+
+    // Иконка по типу файла
+    const getFileIcon = type => {
+        if (type.includes('pdf')) return '📄';
+        if (type.includes('word') || type.includes('document')) return '📝';
+        if (type.includes('excel') || type.includes('spreadsheet')) return '📊';
+        if (type.includes('zip') || type.includes('rar') || type.includes('7z')) return '🗜';
+        if (type.includes('audio')) return '🎵';
+        if (type.includes('video')) return '🎬';
+        return '📎';
     };
 
     const addCtx = (wrap, id, txt, senderId) => {
@@ -300,7 +384,8 @@ const Chat = (() => {
         if (!b) return '';
         if (b < 1024) return b + ' B';
         if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
-        return (b / 1048576).toFixed(1) + ' MB';
+        if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
+        return (b / 1073741824).toFixed(1) + ' GB';
     };
 
     const markRead = cid => {
@@ -363,7 +448,9 @@ const Chat = (() => {
     };
 
     const copy = txt => {
-        navigator.clipboard.writeText(txt).then(() => UI.toast('📋 Скопировано')).catch(() => UI.toast('❌ Не удалось'));
+        navigator.clipboard.writeText(txt)
+            .then(() => UI.toast('📋 Скопировано'))
+            .catch(() => UI.toast('❌ Не удалось'));
     };
 
     const close = () => {
@@ -371,6 +458,16 @@ const Chat = (() => {
         if (_typing) setTyping(false);
         clearTimeout(_typeTo);
         document.getElementById('mob-fab')?.classList.remove('hide');
+
+        // Убираем drag & drop
+        const chatView = document.getElementById('chat-view');
+        if (chatView) {
+            chatView.removeEventListener('dragover', _onDragOver);
+            chatView.removeEventListener('dragleave', _onDragLeave);
+            chatView.removeEventListener('drop', _onDrop);
+            chatView.classList.remove('drag-over');
+        }
+
         _cid = null; _pid = null; _pdata = null; _typing = false;
     };
 
