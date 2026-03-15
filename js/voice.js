@@ -24,7 +24,7 @@ const Voice = (() => {
                 if (e.data.size > 0) _chunks.push(e.data);
             };
 
-            _mediaRecorder.start();
+            _mediaRecorder.start(100);
             _startTime = Date.now();
 
             $('voice-recorder')?.classList.remove('hidden');
@@ -33,38 +33,32 @@ const Voice = (() => {
 
             _timerInterval = setInterval(() => {
                 const elapsed = Math.floor((Date.now() - _startTime) / 1000);
-                const min = Math.floor(elapsed / 60);
-                const sec = elapsed % 60;
                 const t = $('voice-rec-time');
-                if (t) t.textContent = `${min}:${sec.toString().padStart(2, '0')}`;
+                if (t) t.textContent = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`;
             }, 200);
 
             UI.haptic('light');
         } catch (e) {
             console.error('Voice record error:', e);
-            UI.toast('Нет доступа к микрофону');
+            UI.toast('❌ Нет доступа к микрофону');
         }
     };
 
-    const stop = () => {
-        return new Promise(resolve => {
-            if (!_mediaRecorder || _mediaRecorder.state === 'inactive') {
-                cleanup();
-                resolve(null);
-                return;
-            }
-
-            const mType = _mediaRecorder.mimeType;
-            _mediaRecorder.onstop = () => {
-                const blob = new Blob(_chunks, { type: mType });
-                const duration = Math.floor((Date.now() - _startTime) / 1000);
-                cleanup();
-                resolve({ blob, duration, mimeType: mType });
-            };
-
-            _mediaRecorder.stop();
-        });
-    };
+    const stop = () => new Promise(resolve => {
+        if (!_mediaRecorder || _mediaRecorder.state === 'inactive') {
+            cleanup();
+            resolve(null);
+            return;
+        }
+        const mType = _mediaRecorder.mimeType;
+        _mediaRecorder.onstop = () => {
+            const blob = new Blob(_chunks, { type: mType });
+            const duration = Math.floor((Date.now() - _startTime) / 1000);
+            cleanup();
+            resolve({ blob, duration, mimeType: mType });
+        };
+        _mediaRecorder.stop();
+    });
 
     const cancel = () => {
         if (_mediaRecorder && _mediaRecorder.state !== 'inactive') {
@@ -72,15 +66,13 @@ const Voice = (() => {
             _mediaRecorder.stop();
         }
         cleanup();
+        UI.toast('Запись отменена');
     };
 
     const cleanup = () => {
         clearInterval(_timerInterval);
         _timerInterval = null;
-        if (_stream) {
-            _stream.getTracks().forEach(t => t.stop());
-            _stream = null;
-        }
+        if (_stream) { _stream.getTracks().forEach(t => t.stop()); _stream = null; }
         _mediaRecorder = null;
         _chunks = [];
         $('voice-recorder')?.classList.add('hidden');
@@ -91,49 +83,53 @@ const Voice = (() => {
     const sendVoice = async () => {
         const result = await stop();
         if (!result || !result.blob || result.duration < 1) {
-            UI.toast('Слишком короткое');
+            UI.toast('⚠ Слишком короткое');
             return;
         }
-
         if (!Chat.cid()) return;
 
-        UI.toast('⏫ Отправка...');
+        UI.toast('📤 Загрузка...');
 
         try {
-            const me = Auth.user()?.uid;
-            if (!me) return;
-
+            // Создаём File из Blob
             const ext = result.mimeType.includes('mp4') ? 'mp4' : 'webm';
-            const path = `chats/${Chat.cid()}/voice_${Date.now()}.${ext}`;
-            const ref = storage.ref(path);
-            const snap = await ref.put(result.blob);
-            const url = await snap.ref.getDownloadURL();
+            const file = new File(
+                [result.blob],
+                `voice_${Date.now()}.${ext}`,
+                { type: result.mimeType }
+            );
 
-            const waveform = Array.from({ length: 30 }, () => Math.random() * 0.8 + 0.2);
+            // Используем Storage.upload() — НЕ Firebase Storage!
+            const uploaded = await Storage.upload(file, pct => {
+                if (pct > 0 && pct < 100) UI.toast(`📤 Загрузка ${pct}%`);
+            });
+
+            const waveform = Array.from(
+                { length: 30 },
+                () => Math.random() * 0.8 + 0.2
+            );
 
             await Chat.send('🎤 Голосовое', 'voice', {
-                fileURL: url,
+                fileURL: uploaded.url,
                 voiceDuration: result.duration,
                 voiceWaveform: waveform,
-                fileType: result.mimeType
+                fileType: result.mimeType,
+                isBase64: uploaded.isBase64 || false
             });
 
             UI.toast('✅ Отправлено');
         } catch (e) {
             console.error('Voice send error:', e);
-            UI.toast('❌ Ошибка отправки');
+            UI.toast('❌ Ошибка: ' + e.message);
         }
     };
 
-    const makeVoiceEl = (m) => {
+    const makeVoiceEl = m => {
         const dur = m.voiceDuration || 0;
-        const min = Math.floor(dur / 60);
-        const sec = dur % 60;
-        const durStr = `${min}:${sec.toString().padStart(2, '0')}`;
-
+        const durStr = `${Math.floor(dur / 60)}:${String(dur % 60).padStart(2, '0')}`;
         const waveform = m.voiceWaveform || Array.from({ length: 30 }, () => Math.random() * 0.8 + 0.2);
 
-        const waveBarsHtml = waveform.map(v => {
+        const waveBars = waveform.map(v => {
             const h = Math.max(4, Math.round(v * 28));
             return `<div class="voice-wave-bar" style="height:${h}px"></div>`;
         }).join('');
@@ -142,42 +138,58 @@ const Voice = (() => {
         container.className = 'msg-voice';
         container.innerHTML = `
             <button class="voice-play-btn" data-url="${m.fileURL || ''}" data-playing="false">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="5,3 19,12 5,21"/>
+                </svg>
             </button>
-            <div class="voice-wave">${waveBarsHtml}</div>
+            <div class="voice-wave">${waveBars}</div>
             <span class="voice-dur">${durStr}</span>
         `;
 
         const playBtn = container.querySelector('.voice-play-btn');
         let audio = null;
 
+        const setPlay = () => {
+            playBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>`;
+        };
+        const setPause = () => {
+            playBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+        };
+
         playBtn.addEventListener('click', () => {
             const url = playBtn.dataset.url;
             if (!url) return;
 
-            const isPlaying = playBtn.dataset.playing === 'true';
-
-            if (isPlaying && audio) {
+            if (playBtn.dataset.playing === 'true' && audio) {
                 audio.pause();
                 audio.currentTime = 0;
                 playBtn.dataset.playing = 'false';
-                playBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>';
+                setPlay();
                 return;
             }
 
-            if (audio) {
-                audio.pause();
-                audio.currentTime = 0;
-            }
+            if (audio) { audio.pause(); audio = null; }
 
             audio = new Audio(url);
-            audio.play().catch(() => UI.toast('Не удалось воспроизвести'));
+            audio.play().catch(e => {
+                console.error('Audio play error:', e);
+                UI.toast('❌ Не удалось воспроизвести');
+                setPlay();
+                playBtn.dataset.playing = 'false';
+            });
+
             playBtn.dataset.playing = 'true';
-            playBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+            setPause();
 
             audio.onended = () => {
                 playBtn.dataset.playing = 'false';
-                playBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>';
+                setPlay();
+            };
+
+            audio.onerror = () => {
+                playBtn.dataset.playing = 'false';
+                setPlay();
+                UI.toast('❌ Ошибка воспроизведения');
             };
         });
 
