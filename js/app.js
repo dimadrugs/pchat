@@ -10,7 +10,7 @@ let activeChatId = null;
 let _currentPeerId = null;
 let _currentPeerData = null;
 
-/* ======== BOOT ======== */
+/* BOOT */
 const splash = $('splash');
 let logged = false;
 try {
@@ -56,11 +56,12 @@ function startApp() {
     Notif.init();
     Contacts.init();
     UI.initEmojiTabs();
+    renderQuickEmojiSetting();
     const uid = Auth.user()?.uid;
     if (uid) Calls.init(uid);
 }
 
-/* ======== ONBOARDING ======== */
+/* ONBOARDING */
 let _obTimer;
 on('ob-username', 'input', async e => {
     const val = e.target.value.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase();
@@ -90,14 +91,12 @@ onclick('ob-save', async () => {
     catch (e) { UI.toast('Ошибка: ' + e.message); if (btn) { btn.disabled = false; btn.textContent = 'Сохранить и войти'; } }
 });
 
-/* ======== AUTH ======== */
+/* AUTH */
 onclick('to-reg', e => { e?.preventDefault(); $('form-login')?.classList.add('hidden'); $('form-reg')?.classList.remove('hidden'); });
 onclick('to-li', e => { e?.preventDefault(); $('form-reg')?.classList.add('hidden'); $('form-login')?.classList.remove('hidden'); });
-
 document.querySelectorAll('.pw-eye').forEach(b => {
     b.onclick = () => { const inp = $(b.dataset.t); if (inp) inp.type = inp.type === 'password' ? 'text' : 'password'; };
 });
-
 on('re-pw', 'input', e => UI.pwStrength(e.target.value));
 
 let _regTimer;
@@ -156,20 +155,18 @@ function setLoad(btn, on) {
     btn.querySelector('.btn-spin')?.classList.toggle('hidden', !on);
 }
 
-/* ======== SIDEBAR ======== */
+/* SIDEBAR */
 function refreshSidebar() {
     const p = Auth.profile();
     if (!p) return;
     const ini = (p.name || 'P')[0].toUpperCase();
     const bg = UI.avatarBg(p.name || '');
     const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
-    const setBg = (id, v) => { const el = $(id); if (el) el.style.background = v; };
 
-    // Sidebar avatar
     const sfAv = $('sf-avatar');
     if (sfAv) {
         if (p.avatarURL) {
-            sfAv.innerHTML = `<img src="${p.avatarURL}" alt="">`;
+            sfAv.innerHTML = `<img src="${p.avatarURL}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
         } else {
             sfAv.textContent = ini;
             sfAv.style.background = bg;
@@ -179,11 +176,10 @@ function refreshSidebar() {
     set('sf-name', p.name || 'User');
     set('sf-username', p.username ? '@' + p.username : p.email || '');
 
-    // Settings avatar
     const sa = $('settings-avatar');
     if (sa) {
         if (p.avatarURL) {
-            sa.innerHTML = `<img src="${p.avatarURL}" alt="">`;
+            sa.innerHTML = `<img src="${p.avatarURL}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
         } else {
             sa.textContent = ini;
             sa.style.background = bg;
@@ -198,7 +194,7 @@ function refreshSidebar() {
     set('set-bio-v', p.bio || 'Не указано');
 }
 
-/* ======== CHAT LIST ======== */
+/* CHAT LIST */
 function loadChats() {
     const me = Auth.user()?.uid;
     if (!me) return;
@@ -233,7 +229,8 @@ function makeChatRow(cid, c) {
     const pid = c.participants.find(p => p !== me);
     if (!pid) return null;
 
-    const name = c.contactNames?.[me]?.[pid] || c.names?.[pid] || 'User';
+    const contactName = c.contactNames?.[me]?.[pid];
+    const name = contactName || c.names?.[pid] || 'User';
     const unread = c[`unread_${me}`] || 0;
     const msg = c.lastMessage || '';
     const time = c.lastMessageTime ? UI.fmtDate(c.lastMessageTime) : '';
@@ -245,7 +242,7 @@ function makeChatRow(cid, c) {
     el.className = 'chat-row' + (cid === activeChatId ? ' active' : '');
 
     const avContent = avatarURL
-        ? `<img src="${avatarURL}" alt="">`
+        ? `<img src="${avatarURL}" alt="" style="width:100%;height:100%;object-fit:cover">`
         : ini;
 
     el.innerHTML = `
@@ -269,13 +266,9 @@ function makeChatRow(cid, c) {
         try {
             const pdoc = await db.collection('users').doc(pid).get();
             const pdata = pdoc.exists ? pdoc.data() : { name, email: c.emails?.[pid] || '' };
+            if (contactName) pdata._displayName = contactName;
             _currentPeerId = pid;
             _currentPeerData = pdata;
-
-            // Если есть контактное имя — используем его
-            const contactName = c.contactNames?.[me]?.[pid];
-            if (contactName) pdata._displayName = contactName;
-
             Chat.open(cid, pid, pdata);
             UI.showChat();
         } catch (e) {
@@ -286,7 +279,7 @@ function makeChatRow(cid, c) {
     return el;
 }
 
-/* ======== NAV ======== */
+/* NAV */
 onclick('mob-fab', () => { $('new-chat-modal')?.classList.remove('hidden'); setTimeout(() => $('user-search-input')?.focus(), 300); });
 onclick('new-chat-btn', () => { $('new-chat-modal')?.classList.remove('hidden'); setTimeout(() => $('user-search-input')?.focus(), 300); });
 onclick('new-chat-close', () => {
@@ -296,22 +289,18 @@ onclick('new-chat-close', () => {
     if (box) box.innerHTML = '<div class="search-hint"><p>Введите @юзернейм для поиска</p></div>';
 });
 $('new-chat-modal')?.addEventListener('click', e => { if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden'); });
-
 onclick('mobile-back', () => {
-    Chat.close();
-    UI.hideChat();
-    activeChatId = null;
-    _currentPeerId = null;
-    _currentPeerData = null;
+    Chat.close(); UI.hideChat(); activeChatId = null;
+    _currentPeerId = null; _currentPeerData = null;
     document.querySelectorAll('.chat-row').forEach(r => r.classList.remove('active'));
 });
 
-onclick('sf-settings-btn', () => { refreshSidebar(); $('settings-modal')?.classList.remove('hidden'); });
-onclick('sf-user-btn', () => { refreshSidebar(); $('settings-modal')?.classList.remove('hidden'); });
+onclick('sf-settings-btn', () => { refreshSidebar(); renderQuickEmojiSetting(); $('settings-modal')?.classList.remove('hidden'); });
+onclick('sf-user-btn', () => { refreshSidebar(); renderQuickEmojiSetting(); $('settings-modal')?.classList.remove('hidden'); });
 onclick('settings-close', () => $('settings-modal')?.classList.add('hidden'));
 $('settings-modal')?.addEventListener('click', e => { if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden'); });
 
-/* ======== CHAT SEARCH ======== */
+/* SEARCH */
 on('chat-search', 'input', e => {
     const q = e.target.value.toLowerCase();
     document.querySelectorAll('.chat-row').forEach(r => {
@@ -320,14 +309,10 @@ on('chat-search', 'input', e => {
     });
 });
 
-/* ======== MESSAGE INPUT ======== */
+/* MSG INPUT */
 const msgInp = $('msg-input');
 if (msgInp) {
-    msgInp.addEventListener('input', () => {
-        UI.autoResize(msgInp);
-        UI.updateSend();
-        Chat.handleTyping();
-    });
+    msgInp.addEventListener('input', () => { UI.autoResize(msgInp); UI.updateSend(); Chat.handleTyping(); });
     msgInp.addEventListener('keydown', e => {
         if (e.key === 'Enter' && !e.shiftKey && window.innerWidth > 768) {
             e.preventDefault();
@@ -335,67 +320,58 @@ if (msgInp) {
         }
     });
 }
+onclick('send-btn', () => { if (msgInp?.value.trim()) { UI.haptic('light'); Chat.send(msgInp.value.trim()); } });
 
-onclick('send-btn', () => {
-    if (msgInp?.value.trim()) { UI.haptic('light'); Chat.send(msgInp.value.trim()); }
-});
+/* EMOJI */
+onclick('emoji-btn', () => { $('emoji-panel')?.classList.toggle('hidden'); $('attach-panel')?.classList.add('hidden'); });
 
-/* ======== EMOJI ======== */
-onclick('emoji-btn', () => {
-    $('emoji-panel')?.classList.toggle('hidden');
-    $('attach-panel')?.classList.add('hidden');
-});
+/* ATTACH — исправленная версия */
+onclick('attach-btn', () => { $('attach-panel')?.classList.toggle('hidden'); $('emoji-panel')?.classList.add('hidden'); });
 
-/* ======== ATTACH ======== */
-onclick('attach-btn', () => {
-    $('attach-panel')?.classList.toggle('hidden');
-    $('emoji-panel')?.classList.add('hidden');
-});
-
-document.querySelectorAll('.attach-item').forEach(b => {
-    b.onclick = () => {
+// Используем делегирование на стабильный родитель
+document.addEventListener('click', e => {
+    const item = e.target.closest('.attach-item');
+    if (item) {
         $('attach-panel')?.classList.add('hidden');
-        const t = b.dataset.type;
+        const t = item.dataset.type;
         if (t === 'photo') $('photo-pick')?.click();
         else if (t === 'video') $('video-pick')?.click();
         else if (t === 'file') $('file-pick')?.click();
-    };
+        return;
+    }
+    if (!e.target.closest('.ctx') && !e.target.closest('.msg-bub')) UI.hideCtx();
+    if (!e.target.closest('.attach-panel') && !e.target.closest('#attach-btn')) $('attach-panel')?.classList.add('hidden');
+    if (!e.target.closest('.emoji-panel') && !e.target.closest('#emoji-btn')) $('emoji-panel')?.classList.add('hidden');
+    if (!e.target.closest('.reaction-picker')) document.querySelectorAll('.reaction-picker').forEach(p => p.remove());
 });
 
-['photo-pick', 'video-pick', 'file-pick'].forEach(id => {
-    const el = $(id);
-    if (el) el.onchange = e => {
-        if (e.target.files?.[0]) { Chat.sendFile(e.target.files[0]); e.target.value = ''; }
-    };
-});
+$('photo-pick').onchange = e => { if (e.target.files?.[0]) { Chat.sendFile(e.target.files[0]); e.target.value = ''; } };
+$('video-pick').onchange = e => { if (e.target.files?.[0]) { Chat.sendFile(e.target.files[0]); e.target.value = ''; } };
+$('file-pick').onchange = e => { if (e.target.files?.[0]) { Chat.sendFile(e.target.files[0]); e.target.value = ''; } };
 
-/* ======== VOICE ======== */
+/* VOICE */
 onclick('voice-btn', () => { if (!Voice.isRecording()) Voice.start(); });
 onclick('voice-cancel', () => Voice.cancel());
 onclick('voice-send', () => Voice.sendVoice());
 
-/* ======== CALLS ======== */
+/* CALLS */
 onclick('btn-audio-call', () => {
     const pid = Chat.getPid();
     if (!pid) return UI.toast('Сначала откройте чат');
-    const name = $('chat-peer-name')?.textContent || 'User';
-    Calls.callUser(pid, name, false);
+    Calls.callUser(pid, $('chat-peer-name')?.textContent || 'User', false);
 });
-
 onclick('btn-video-call', () => {
     const pid = Chat.getPid();
     if (!pid) return UI.toast('Сначала откройте чат');
-    const name = $('chat-peer-name')?.textContent || 'User';
-    Calls.callUser(pid, name, true);
+    Calls.callUser(pid, $('chat-peer-name')?.textContent || 'User', true);
 });
-
 onclick('call-end-btn', () => Calls.end());
 onclick('call-accept-btn', () => Calls.accept());
 onclick('call-reject-btn', () => Calls.reject());
 onclick('call-mute-btn', () => Calls.toggleMute());
 onclick('call-cam-btn', () => Calls.toggleCam());
 
-/* ======== CONTEXT MENU ======== */
+/* CTX */
 document.querySelectorAll('.ctx-btn').forEach(b => {
     b.onclick = () => {
         const m = $('ctx'); if (!m) return;
@@ -404,7 +380,6 @@ document.querySelectorAll('.ctx-btn').forEach(b => {
         const txt = m.dataset.txt;
         const sid = m.dataset.sid;
         UI.hideCtx();
-
         if (action === 'copy') Chat.copy(txt);
         else if (action === 'delete') Chat.del(mid);
         else if (action === 'reply') {
@@ -416,28 +391,16 @@ document.querySelectorAll('.ctx-btn').forEach(b => {
     };
 });
 
-document.addEventListener('click', e => {
-    if (!e.target.closest('.ctx') && !e.target.closest('.msg-bub')) UI.hideCtx();
-    if (!e.target.closest('.attach-panel') && !e.target.closest('#attach-btn')) $('attach-panel')?.classList.add('hidden');
-    if (!e.target.closest('.emoji-panel') && !e.target.closest('#emoji-btn')) $('emoji-panel')?.classList.add('hidden');
-    // Закрываем reaction picker
-    if (!e.target.closest('.reaction-picker')) {
-        document.querySelectorAll('.reaction-picker').forEach(p => p.remove());
-    }
-});
-
-/* ======== LIGHTBOX ======== */
+/* LIGHTBOX */
 onclick('lb-close', () => UI.closeLightbox());
 $('lightbox')?.addEventListener('click', e => { if (e.target === e.currentTarget) UI.closeLightbox(); });
 
-/* ======== PROFILE ======== */
-// Открыть профиль собеседника
+/* PROFILE */
 onclick('chat-info-btn', async () => {
     if (!_currentPeerId) return;
     await showProfile(_currentPeerId);
 });
 
-// Клик на имя/аватар в шапке чата тоже открывает профиль
 onclick('chat-peer-info', async () => {
     if (!_currentPeerId) return;
     await showProfile(_currentPeerId);
@@ -447,7 +410,6 @@ async function showProfile(uid) {
     try {
         const doc = await db.collection('users').doc(uid).get();
         if (!doc.exists) { UI.toast('Пользователь не найден'); return; }
-
         const d = doc.data();
         const name = d.name || 'User';
         const ini = name[0].toUpperCase();
@@ -455,22 +417,21 @@ async function showProfile(uid) {
         const avatarEl = $('profile-avatar');
         if (avatarEl) {
             if (d.avatarURL) {
-                avatarEl.innerHTML = `<img src="${d.avatarURL}" alt="">`;
+                avatarEl.innerHTML = `<img src="${d.avatarURL}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
             } else {
                 avatarEl.textContent = ini;
                 avatarEl.style.background = UI.avatarBg(name);
-                avatarEl.querySelector('img')?.remove();
             }
         }
 
-        const nameEl = $('profile-name');
-        if (nameEl) nameEl.textContent = name;
+        const n = $('profile-name'); if (n) n.textContent = name;
+        const u = $('profile-username'); if (u) u.textContent = d.username ? '@' + d.username : '';
+        const b = $('profile-bio'); if (b) b.textContent = d.bio || '';
 
-        const unEl = $('profile-username');
-        if (unEl) unEl.textContent = d.username ? '@' + d.username : '';
-
-        const bioEl = $('profile-bio');
-        if (bioEl) bioEl.textContent = d.bio || '';
+        const statusRow = $('profile-status-row');
+        if (statusRow) {
+            statusRow.textContent = d.online ? '🟢 В сети' : d.lastSeen ? `Был(а) ${UI.fmtDate(d.lastSeen)}` : 'Не в сети';
+        }
 
         $('profile-modal')?.classList.remove('hidden');
     } catch (e) {
@@ -484,18 +445,37 @@ $('profile-modal')?.addEventListener('click', e => { if (e.target === e.currentT
 
 onclick('profile-msg-btn', () => {
     $('profile-modal')?.classList.add('hidden');
-    // Чат уже открыт — просто фокус на ввод
     $('msg-input')?.focus();
 });
 
 onclick('profile-call-btn', () => {
     $('profile-modal')?.classList.add('hidden');
     if (!_currentPeerId) return;
-    const name = $('chat-peer-name')?.textContent || 'User';
-    Calls.callUser(_currentPeerId, name, false);
+    Calls.callUser(_currentPeerId, $('chat-peer-name')?.textContent || 'User', false);
 });
 
-/* ======== AVATAR UPLOAD ======== */
+/* ПЕРЕИМЕНОВАТЬ КОНТАКТ */
+onclick('profile-rename-btn', async () => {
+    if (!_currentPeerId || !activeChatId) return;
+    const me = Auth.user()?.uid;
+    const current = $('chat-peer-name')?.textContent || '';
+    const newName = await UI.prompt('Переименовать контакт', 'Имя контакта', current);
+    if (!newName || newName.trim() === current) return;
+
+    try {
+        await db.collection('chats').doc(activeChatId).update({
+            [`contactNames.${me}.${_currentPeerId}`]: newName.trim()
+        });
+        const nameEl = $('chat-peer-name');
+        if (nameEl) nameEl.textContent = newName.trim();
+        $('profile-modal')?.classList.add('hidden');
+        UI.toast('✅ Контакт переименован');
+    } catch (e) {
+        UI.toast('❌ ' + e.message);
+    }
+});
+
+/* AVATAR */
 onclick('edit-avatar-btn', () => $('avatar-pick')?.click());
 onclick('settings-avatar', () => $('avatar-pick')?.click());
 
@@ -504,67 +484,43 @@ if (avatarPick) {
     avatarPick.onchange = async e => {
         const file = e.target.files?.[0];
         if (!file) return;
-
-        if (!file.type.startsWith('image/')) {
-            UI.toast('⚠ Выберите изображение');
-            return;
-        }
-
-        if (file.size > 5 * 1024 * 1024) {
-            UI.toast('⚠ Макс 5МБ');
-            return;
-        }
+        if (!file.type.startsWith('image/')) { UI.toast('⚠ Выберите изображение'); return; }
+        if (file.size > 5 * 1024 * 1024) { UI.toast('⚠ Макс 5МБ'); return; }
 
         UI.toast('📤 Загрузка аватарки...');
-
         try {
-            const result = await Storage.upload(file, pct => {
-                if (pct > 0 && pct < 100) UI.toast(`📤 ${pct}%`);
-            });
-
+            const result = await Storage.upload(file, pct => { if (pct > 0 && pct < 100) UI.toast(`📤 ${pct}%`); });
             await Auth.update({ avatarURL: result.url });
             refreshSidebar();
-            UI.toast('✅ Аватарка обновлена');
 
-            // Обновляем аватарку в чатах
+            // Обновляем во всех чатах
             const me = Auth.user()?.uid;
             if (me) {
-                const chats = await db.collection('chats')
-                    .where('participants', 'array-contains', me)
-                    .get();
-                for (const doc of chats.docs) {
-                    await doc.ref.update({ [`avatars.${me}`]: result.url }).catch(() => {});
-                }
+                const chats = await db.collection('chats').where('participants', 'array-contains', me).get();
+                const batch = db.batch();
+                chats.docs.forEach(doc => batch.update(doc.ref, { [`avatars.${me}`]: result.url }));
+                await batch.commit().catch(() => {});
             }
-        } catch (e) {
-            console.error('Avatar upload:', e);
-            UI.toast('❌ ' + e.message);
-        }
-
+            UI.toast('✅ Аватарка обновлена');
+        } catch (e) { UI.toast('❌ ' + e.message); }
         e.target.value = '';
     };
 }
 
-/* ======== SETTINGS ======== */
+/* SETTINGS */
 onclick('edit-name-btn', async () => {
     const v = await UI.prompt('Изменить имя', 'Новое имя', Auth.profile()?.name || '');
-    if (v) {
-        await Auth.update({ name: v });
-
-        // Обновляем имя в чатах
-        const me = Auth.user()?.uid;
-        if (me) {
-            const chats = await db.collection('chats')
-                .where('participants', 'array-contains', me)
-                .get();
-            for (const doc of chats.docs) {
-                await doc.ref.update({ [`names.${me}`]: v }).catch(() => {});
-            }
-        }
-
-        refreshSidebar();
-        UI.toast('✅ Имя обновлено');
+    if (!v) return;
+    await Auth.update({ name: v });
+    const me = Auth.user()?.uid;
+    if (me) {
+        const chats = await db.collection('chats').where('participants', 'array-contains', me).get();
+        const batch = db.batch();
+        chats.docs.forEach(doc => batch.update(doc.ref, { [`names.${me}`]: v }));
+        await batch.commit().catch(() => {});
     }
+    refreshSidebar();
+    UI.toast('✅ Имя обновлено');
 });
 
 onclick('edit-username-btn', async () => {
@@ -586,6 +542,27 @@ onclick('edit-bio-btn', async () => {
     if (v !== null) { await Auth.update({ bio: v }); refreshSidebar(); UI.toast('✅ Сохранено'); }
 });
 
+/* БЫСТРАЯ РЕАКЦИЯ */
+function renderQuickEmojiSetting() {
+    const container = $('quick-emoji-setting');
+    if (!container) return;
+    const current = Chat.getQuickEmoji();
+    container.innerHTML = '';
+    Chat.QUICK_REACTIONS.forEach(emoji => {
+        const btn = document.createElement('button');
+        btn.className = 'quick-reaction-opt' + (emoji === current ? ' selected' : '');
+        btn.textContent = emoji;
+        btn.title = emoji;
+        btn.onclick = () => {
+            Chat.setQuickEmoji(emoji);
+            renderQuickEmojiSetting();
+            UI.toast(`${emoji} — быстрая реакция`);
+        };
+        container.appendChild(btn);
+    });
+}
+
+/* ТЕМА */
 const themeTog = $('theme-tog');
 if (themeTog) {
     const saved = localStorage.getItem('pchat-theme') || 'dark';
@@ -609,7 +586,7 @@ onclick('logout-btn', async () => {
     }
 });
 
-/* ======== BACK ======== */
+/* BACK */
 window.addEventListener('popstate', () => {
     const cv = $('chat-view');
     if (cv && !cv.classList.contains('hidden') && window.innerWidth <= 768) {
