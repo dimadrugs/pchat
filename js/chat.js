@@ -60,7 +60,7 @@ const Chat = (() => {
             await db.collection('chats').doc(_cid)
                 .collection('messages').add({
                     senderId: me,
-                    text: text, 
+                    text: text,
                     type,
                     encrypted: false,
                     timestamp: firebase.firestore.FieldValue.serverTimestamp(),
@@ -92,17 +92,17 @@ const Chat = (() => {
     const sendFile = async file => {
         if (!_cid || !file) return;
         if (file.size > 10 * 1024 * 1024) { UI.toast('⚠ Макс. 10 МБ'); return; }
-        UI.toast('⏫ Загрузка...');
+        UI.toast('📤 Загрузка...');
         try {
             const me = Auth.user()?.uid;
             if (!me) return;
             const ext = file.name.split('.').pop();
             const path = `chats/${_cid}/${Date.now()}.${ext}`;
-            
+
             const ref = storage.ref(path);
             const snap = await ref.put(file);
             const url = await snap.ref.getDownloadURL();
-            
+
             const isImg = file.type.startsWith('image/');
             await send(isImg ? '📷 Фото' : `📎 ${file.name}`, isImg ? 'image' : 'file', {
                 fileURL: url, fileName: file.name,
@@ -120,7 +120,7 @@ const Chat = (() => {
         const msgsEl = document.getElementById('msgs');
         const scroll = document.getElementById('msgs-scroll');
         let lastDateStr = null;
-        let isInitialLoad = true; // Флаг: первая загрузка истории
+        let isInitialLoad = true;
 
         _unsub = db.collection('chats').doc(chatId)
             .collection('messages')
@@ -153,8 +153,7 @@ const Chat = (() => {
                         const me = Auth.user()?.uid;
                         if (m.senderId !== me) {
                             markMsgRead(chatId, id);
-                            
-                            // Уведомляем ТОЛЬКО если это не загрузка истории
+
                             if (!isInitialLoad) {
                                 let notifText = m.text || 'Новое сообщение';
                                 if (m.type === 'voice') notifText = '🎤 Голосовое сообщение';
@@ -175,9 +174,8 @@ const Chat = (() => {
                         document.querySelector(`[data-mid="${change.doc.id}"]`)?.remove();
                     }
                 });
-                
-                // После первой обработки всех старых сообщений отключаем флаг
-                isInitialLoad = false; 
+
+                isInitialLoad = false;
             });
     };
 
@@ -189,7 +187,8 @@ const Chat = (() => {
         wrap.className = `msg ${mine ? 'out' : 'in'}`;
         wrap.dataset.mid = id;
 
-        const time = UI.fmtTime(m.timestamp);
+        // Время: если timestamp ещё не пришёл (serverTimestamp), показываем текущее
+        const time = m.timestamp ? UI.fmtTime(m.timestamp) : UI.fmtTimeNow();
         const statusHtml = mine
             ? `<span class="msg-status ${statusClass(m.status)}">${statusIcon(m.status)}</span>`
             : '';
@@ -200,15 +199,15 @@ const Chat = (() => {
         if (m.type === 'voice' && m.fileURL) {
             const bub = document.createElement('div');
             bub.className = 'msg-bub';
-            
+
             const voiceEl = Voice.makeVoiceEl(m);
             bub.appendChild(voiceEl);
-            
+
             const footer = document.createElement('div');
             footer.className = 'msg-footer';
             footer.innerHTML = `<span class="msg-time">${time}</span>${statusHtml}`;
             bub.appendChild(footer);
-            
+
             wrap.appendChild(bub);
             addLongPress(wrap, id, '🎤 Голосовое', m.senderId);
             return wrap;
@@ -219,7 +218,7 @@ const Chat = (() => {
         } else if (m.type === 'file' && m.fileURL) {
             content = `
             <a class="msg-file" href="${m.fileURL}" target="_blank" rel="noopener">
-                <span class="msg-file-ic">📎</span>
+                <span class="msg-file-ic">📄</span>
                 <div>
                     <div class="msg-fn">${UI.esc(m.fileName || 'Файл')}</div>
                     <div class="msg-fs">${fmtSize(m.fileSize)}</div>
@@ -298,6 +297,19 @@ const Chat = (() => {
         db.collection('chats').doc(_cid).update({ [`typing_${me}`]: val }).catch(() => {});
     };
 
+    const handleTyping = () => {
+        if (!_cid) return;
+        if (!_typing) {
+            _typing = true;
+            setTyping(true);
+        }
+        clearTimeout(_typeTo);
+        _typeTo = setTimeout(() => {
+            _typing = false;
+            setTyping(false);
+        }, 2000);
+    };
+
     const watchTyping = (chatId, peerId) => {
         db.collection('chats').doc(chatId).onSnapshot(doc => {
             if (!doc.exists) return;
@@ -348,5 +360,5 @@ const Chat = (() => {
         clearTimeout(_typeTo);
     };
 
-    return { cid, open, send, sendFile, del, copy, markRead, close };
+    return { cid, open, send, sendFile, del, copy, markRead, close, handleTyping };
 })();
