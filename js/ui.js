@@ -1,7 +1,7 @@
 const UI = (() => {
     const $ = id => document.getElementById(id);
 
-    /* ---- Toast ---- */
+    /* TOAST */
     let _tt;
     const toast = (msg, ms = 3000) => {
         const el = $('toast');
@@ -12,80 +12,57 @@ const UI = (() => {
         _tt = setTimeout(() => el.classList.remove('on'), ms);
     };
 
-    /* ---- Modal ---- */
+    /* MODAL */
     const modal = (title, html, yesText = 'OK', noText = 'Отмена', dangerYes = false) => new Promise(ok => {
-        const m = $('mini-modal');
-        const t = $('mm-title');
-        const b = $('mm-body');
-        const y = $('mm-yes');
-        const n = $('mm-no');
+        const m = $('mini-modal'), t = $('mm-title'), b = $('mm-body'), y = $('mm-yes'), n = $('mm-no');
         if (!m || !t || !b || !y || !n) return ok(false);
-
         t.textContent = title;
         b.innerHTML = html;
         y.textContent = yesText;
         n.textContent = noText;
         y.className = 'mm-btn yes' + (dangerYes ? ' danger' : '');
         m.classList.remove('hidden');
-
-        const done = v => {
-            m.classList.add('hidden');
-            y.onclick = null;
-            n.onclick = null;
-            m.onclick = null;
-            ok(v);
-        };
-
+        const done = v => { m.classList.add('hidden'); y.onclick = null; n.onclick = null; m.onclick = null; ok(v); };
         y.onclick = () => done(true);
         n.onclick = () => done(false);
         m.onclick = e => { if (e.target === m) done(false); };
     });
 
     const prompt = (title, ph = '', def = '') => new Promise(ok => {
-        const m = $('mini-modal');
-        const t = $('mm-title');
-        const b = $('mm-body');
-        const y = $('mm-yes');
-        const n = $('mm-no');
+        const m = $('mini-modal'), t = $('mm-title'), b = $('mm-body'), y = $('mm-yes'), n = $('mm-no');
         if (!m || !t || !b || !y || !n) return ok(null);
-
         t.textContent = title;
-        b.innerHTML = `<input id="mminp" placeholder="${ph}" value="${def}">`;
+        b.innerHTML = `<input id="mminp" placeholder="${ph}" value="${UI.esc(def)}">`;
         y.textContent = 'Сохранить';
         n.textContent = 'Отмена';
         y.className = 'mm-btn yes';
         m.classList.remove('hidden');
-
         const inp = $('mminp');
         if (inp) setTimeout(() => inp.focus(), 100);
-
-        const done = v => {
-            m.classList.add('hidden');
-            y.onclick = null;
-            n.onclick = null;
-            m.onclick = null;
-            ok(v);
-        };
-
+        const done = v => { m.classList.add('hidden'); y.onclick = null; n.onclick = null; m.onclick = null; ok(v); };
         y.onclick = () => done(inp ? inp.value.trim() : null);
         n.onclick = () => done(null);
         m.onclick = e => { if (e.target === m) done(null); };
         if (inp) inp.onkeydown = e => { if (e.key === 'Enter') done(inp.value.trim()); };
     });
 
-    /* ---- Chat view ---- */
+    /* CHAT VIEW */
     const showChat = () => {
         const cv = $('chat-view');
         const ws = $('welcome-screen');
         if (!cv) return;
 
         cv.classList.remove('hidden');
+
         if (window.innerWidth <= 768) {
+            // Мобилка: нужны два rAF чтобы transition сработал
             requestAnimationFrame(() => {
-                cv.classList.add('slide-in');
+                requestAnimationFrame(() => {
+                    cv.classList.add('slide-in');
+                });
             });
         } else {
-            cv.classList.add('slide-in');
+            // ПК: просто показываем
             if (ws) ws.classList.add('hidden');
         }
     };
@@ -97,10 +74,9 @@ const UI = (() => {
 
         if (window.innerWidth <= 768) {
             cv.classList.remove('slide-in');
-            setTimeout(() => cv.classList.add('hidden'), 300);
+            setTimeout(() => cv.classList.add('hidden'), 320);
         } else {
             cv.classList.add('hidden');
-            cv.classList.remove('slide-in');
             if (ws) ws.classList.remove('hidden');
         }
     };
@@ -108,44 +84,37 @@ const UI = (() => {
     const openSidebar = () => {};
     const closeSidebar = () => {};
 
-    /* ---- Lightbox ---- */
+    /* LIGHTBOX */
     const openLightbox = src => {
-        const img = $('lb-img');
-        const lb = $('lightbox');
+        const img = $('lb-img'), lb = $('lightbox');
         if (img) img.src = src;
         if (lb) lb.classList.remove('hidden');
     };
 
-    const closeLightbox = () => {
-        const lb = $('lightbox');
-        if (lb) lb.classList.add('hidden');
-    };
+    const closeLightbox = () => $('lightbox')?.classList.add('hidden');
 
-    /* ---- Context menu ---- */
+    /* CONTEXT MENU */
     const showCtx = (x, y, data) => {
         const m = $('ctx');
         if (!m) return;
         m.classList.remove('hidden');
         m.style.left = Math.min(x, window.innerWidth - 200) + 'px';
-        m.style.top = Math.min(y, window.innerHeight - 150) + 'px';
+        m.style.top = Math.min(y, window.innerHeight - 120) + 'px';
         m.dataset.mid = data.id || '';
         m.dataset.txt = data.text || '';
         m.dataset.sid = data.senderId || '';
     };
 
-    const hideCtx = () => {
-        const m = $('ctx');
-        if (m) m.classList.add('hidden');
-    };
+    const hideCtx = () => $('ctx')?.classList.add('hidden');
 
-    /* ---- Emojis ---- */
+    /* EMOJI */
     const EMOJIS = {
         '😀': ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','🥲','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','😐','😑','😶','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴','😵','🤯','🤠','🥳','🥸','😎','🤓','🧐','😕','😟','🙁','😮','😯','😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','👿','💀','☠','💩','🤡','👹','👺','👻','👽','👾','🤖'],
-        '❤️': ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','♥️','💌','💋','👄','👅','🫂','👐','🤲','🙌','👏','🤝','👍','👎','👊','✊','🤛','🤜','🤞','✌️','🤟','🤘','👌','🤌','🤏','👈','👉','👆','👇','☝️','✋','🤚','🖐','🖖','👋','🤙','💪','🦾','🖕','✍️','🙏','🦶','🦵','🫁','🫀','🦷','🦴','👀','👁','👅','👄'],
-        '🐶': ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐻‍❄️','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🐔','🐧','🐦','🐤','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🪱','🐛','🦋','🐌','🐞','🐜','🪰','🪲','🪳','🦟','🦗','🕷','🦂','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦐','🦞','🦀','🐡','🐠','🐟','🐬','🐳','🐋','🦈','🐊','🐅','🐆','🦓','🦍','🦧','🐘','🦛','🦏','🐪','🐫','🦒','🦘','🐃','🐂','🐄','🐎','🐖','🐏','🐑','🦙','🐐','🦌','🐕','🐩','🦮','🐕‍🦺','🐈','🐈‍⬛','🪶','🐓','🦃','🦤','🦚','🦜','🦢','🦩','🕊','🐇','🦝','🦨','🦡','🦫','🦦','🦥','🐁','🐀','🐿','🦔'],
-        '🍎': ['🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦','🥬','🥒','🌶','🫑','🌽','🥕','🫒','🧄','🧅','🥔','🍠','🥐','🥯','🍞','🥖','🥨','🧀','🥚','🍳','🧈','🥞','🧇','🥓','🥩','🍗','🍖','🦴','🌭','🍔','🍟','🍕','🫓','🥪','🥙','🧆','🌮','🌯','🫔','🥗','🥘','🫕','🥫','🍝','🍜','🍲','🍛','🍣','🍱','🥟','🦪','🍤','🍙','🍚','🍘','🍥','🥠','🥮','🍢','🍡','🍧','🍨','🍦','🥧','🧁','🍰','🎂','🍮','🍭','🍬','🍫','🍿','🍩','🍪','🌰','🥜','🍯','🥛','🍼','🫖','☕','🍵','🧃','🥤','🧋','🍶','🍺','🍻','🥂','🍷','🥃','🍸','🍹','🧉','🍾','🧊'],
-        '⚽': ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🏑','🥍','🏏','🪃','🥅','⛳','🪁','🏹','🎣','🤿','🥊','🥋','🎽','🛹','🛼','🛷','⛸','🥌','🎿','⛷','🏂','🪂','🏋️','🤼','🤸','🤺','⛹️','🏇','🧘','🏄','🏊','🤽','🚣','🧗','🚵','🚴','🏆','🥇','🥈','🥉','🏅','🎖','🏵','🎗','🎫','🎟','🎪','🎭','🎨','🎬','🎤','🎧','🎼','🎹','🥁','🪘','🎷','🎺','🪗','🎸','🪕','🎻','🎲','♟','🎯','🎳','🎮','🎰','🧩'],
-        '🏠': ['🏠','🏡','🏘','🏚','🏗','🏭','🏢','🏬','🏣','🏤','🏥','🏦','🏨','🏪','🏫','💒','🏛','⛪','🕌','🛕','🕍','⛩','🕋','⛲','⛺','🌁','🌃','🏙','🌄','🌅','🌆','🌇','🌉','🎠','🎡','🎢','💈','🎪','🚂','🚃','🚄','🚅','🚆','🚇','🚈','🚉','🚊','🚝','🚞','🚋','🚌','🚍','🚎','🚐','🚑','🚒','🚓','🚔','🚕','🚖','🚗','🚘','🚙','🛻','🚚','🚛','🚜','🏎','🏍','🛵','🦽','🦼','🛺','🚲','🛴','🛹','🛼','🚏','🛣','🛤','🛢','⛽','🚨','🚥','🚦','🛑','🚧','⚓','⛵','🛶','🚤','🛳','⛴','🛥','🚢','✈','🛩','🛫','🛬','🪂','💺','🚁','🚟','🚠','🚡','🛰','🚀','🛸'],
+        '❤️': ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','♥️','💌','💋','👄','👋','🤚','🖐','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👍','👎','✊','👊','🤛','🤜','👏','🙌','👐','🤲','🤝','🙏','✍️','💪','🦾','🦿','🦵','🦶','👂','🦻','👃','👀','👁','👅','👄'],
+        '🐶': ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐻‍❄️','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🐔','🐧','🐦','🐤','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🐛','🦋','🐌','🐞','🐜','🦟','🦗','🕷','🦂','🐢','🐍','🦎','🐙','🦑','🦐','🦞','🦀','🐡','🐠','🐟','🐬','🐳','🐋','🦈','🐊','🐅','🐆','🦓','🦍','🐘','🦛','🦏','🐪','🐫','🦒','🦘','🦬','🐃','🐂','🐄','🐎','🐖','🐏','🐑','🦙','🐐','🦌','🐕','🐩','🦮','🐈','🐈‍⬛','🐓','🦃','🦤','🦚','🦜','🦢','🦩','🕊','🐇','🦝','🦨','🦡','🦫','🦦','🦥','🐁','🐀','🐿','🦔'],
+        '🍎': ['🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦','🥬','🥒','🌶','🫑','🌽','🥕','🧄','🧅','🥔','🍠','🥐','🥯','🍞','🥖','🥨','🧀','🥚','🍳','🧈','🥞','🧇','🥓','🥩','🍗','🍖','🌭','🍔','🍟','🍕','🌮','🌯','🥗','🥘','🍝','🍜','🍲','🍛','🍣','🍱','🥟','🍤','🍙','🍚','🍘','🍥','🥮','🍢','🍡','🍧','🍨','🍦','🥧','🧁','🍰','🎂','🍮','🍭','🍬','🍫','🍿','🍩','🍪','🌰','🥜','🍯','🥛','🍼','🫖','☕','🍵','🧃','🥤','🧋','🍶','🍺','🍻','🥂','🍷','🥃','🍸','🍹','🧉','🍾'],
+        '⚽': ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🏓','🏸','🥊','🥋','🎽','🛹','🛼','🛷','⛸','🥌','🎿','⛷','🏂','🪂','🏋️','🤼','🤸','🤺','⛹️','🏇','🧘','🏄','🏊','🤽','🚣','🧗','🚵','🚴','🏆','🥇','🥈','🥉','🏅','🎖','🎪','🎭','🎨','🎬','🎤','🎧','🎼','🎹','🥁','🎷','🎺','🎸','🪕','🎻','🎲','♟','🎯','🎳','🎮','🎰','🧩'],
+        '🏠': ['🏠','🏡','🏘','🏚','🏗','🏭','🏢','🏬','🏣','🏤','🏥','🏦','🏨','🏪','🏫','🏛','⛪','🕌','🛕','🕍','⛩','🕋','⛲','⛺','🌁','🌃','🏙','🌄','🌅','🌆','🌇','🌉','🎠','🎡','🎢','🚂','🚃','🚄','🚅','🚆','🚇','🚈','🚉','🚊','🚝','🚞','🚋','🚌','🚍','🚎','🚐','🚑','🚒','🚓','🚔','🚕','🚖','🚗','🚘','🚙','🛻','🚚','🚛','🚜','🏎','🏍','🛵','🚲','🛴','🛹','🛼','✈','🛩','🛫','🛬','🪂','💺','🚁','🚀','🛸','🚢','⛵','🛶','🚤','🛳','⛴','🛥'],
     };
 
     const renderEmojis = cat => {
@@ -157,12 +126,7 @@ const UI = (() => {
             b.textContent = e;
             b.onclick = () => {
                 const inp = $('msg-input');
-                if (inp) {
-                    inp.value += e;
-                    inp.focus();
-                    autoResize(inp);
-                    updateSend();
-                }
+                if (inp) { inp.value += e; inp.focus(); autoResize(inp); updateSend(); }
             };
             grid.appendChild(b);
         });
@@ -175,8 +139,7 @@ const UI = (() => {
         const tabs = $('emoji-tabs');
         if (!tabs) return;
         tabs.innerHTML = '';
-        const cats = Object.keys(EMOJIS);
-        cats.forEach((k, i) => {
+        Object.keys(EMOJIS).forEach((k, i) => {
             const b = document.createElement('button');
             b.textContent = k;
             b.dataset.cat = k;
@@ -184,10 +147,10 @@ const UI = (() => {
             b.onclick = () => renderEmojis(k);
             tabs.appendChild(b);
         });
-        if (cats.length > 0) renderEmojis(cats[0]);
+        renderEmojis(Object.keys(EMOJIS)[0]);
     };
 
-    /* ---- Textarea ---- */
+    /* TEXTAREA */
     const autoResize = ta => {
         if (!ta) return;
         ta.style.height = 'auto';
@@ -200,7 +163,7 @@ const UI = (() => {
         if (btn) btn.disabled = !(inp && inp.value.trim());
     };
 
-    /* ---- Password strength ---- */
+    /* PASSWORD STRENGTH */
     const pwStrength = pw => {
         let s = 0;
         if (pw.length >= 8) s += 25;
@@ -208,24 +171,18 @@ const UI = (() => {
         if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) s += 20;
         if (/\d/.test(pw)) s += 20;
         if (/[^a-zA-Z\d]/.test(pw)) s += 20;
-
         const fill = $('pw-fill');
         const label = $('pw-label');
         if (!fill) return;
-
         const colors = ['', '#f87171', '#facc15', '#4ade80', '#22d3ae'];
         const labels = ['', 'Слабый', 'Средний', 'Хороший', 'Отличный'];
         const idx = s < 30 ? 1 : s < 60 ? 2 : s < 80 ? 3 : 4;
-
         fill.style.width = s + '%';
         fill.style.background = colors[idx];
-        if (label) {
-            label.textContent = labels[idx];
-            label.style.color = colors[idx];
-        }
+        if (label) { label.textContent = labels[idx]; label.style.color = colors[idx]; }
     };
 
-    /* ---- Avatar ---- */
+    /* AVATAR */
     const avatarBg = name => {
         const grads = [
             'linear-gradient(135deg,#22d3ae,#38bdf8)',
@@ -243,7 +200,7 @@ const UI = (() => {
         return grads[Math.abs(h) % grads.length];
     };
 
-    /* ---- Time ---- */
+    /* TIME */
     const fmtTime = ts => {
         if (!ts) return '';
         const d = ts.toDate ? ts.toDate() : new Date(ts);
@@ -251,8 +208,7 @@ const UI = (() => {
     };
 
     const fmtTimeNow = () => {
-        const d = new Date();
-        return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+        return new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
     };
 
     const fmtDate = ts => {
@@ -276,7 +232,7 @@ const UI = (() => {
         return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
     };
 
-    /* ---- Misc ---- */
+    /* MISC */
     const haptic = t => {
         if (navigator.vibrate) navigator.vibrate(t === 'light' ? 10 : 25);
     };
