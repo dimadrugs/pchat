@@ -124,13 +124,13 @@ a { color: var(--accent); text-decoration: none; }
 .app-layout { position: absolute; inset: 0; display: flex; width: 100%; height: 100%; overflow: hidden; }
 
 /* SIDEBAR */
-.sidebar { width: var(--sidebar-w); min-width: var(--sidebar-w); background: var(--bg1); border-right: 1px solid var(--border); display: flex; flex-direction: column; height: 100%; z-index: 50; }
+.sidebar { width: var(--sidebar-w); min-width: var(--sidebar-w); background: var(--bg1); border-right: 1px solid var(--border); display: flex; flex-direction: column; height: 100%; z-index: 50; flex-shrink: 0; }
 .sidebar-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 16px 12px; }
 .sidebar-brand { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 800; letter-spacing: 1px; }
 .sidebar-brand span { background: var(--grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 .sidebar-search { display: flex; align-items: center; gap: 8px; margin: 0 12px 8px; padding: 9px 14px; background: var(--bg3); border-radius: var(--r12); }
 .sidebar-search svg { flex-shrink: 0; }
-.sidebar-search input { flex: 1; background: none; border: none; color: var(--text1); font-size: 14px; outline: none; }
+.sidebar-search input { flex: 1; background: none; border: none; color: var(--text1); font-size: 14px; outline: none; min-width: 0; }
 .sidebar-search input::placeholder { color: var(--text3); }
 
 /* CHAT LIST */
@@ -161,7 +161,10 @@ a { color: var(--accent); text-decoration: none; }
 .sf-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sf-username { font-size: 11px; color: var(--text3); }
 
-/* MAIN AREA */
+/* =============================================
+   MAIN AREA — КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ ДЛЯ ПК
+   На десктопе main-area занимает остаток от sidebar
+   ============================================= */
 .main-area { flex: 1; display: flex; flex-direction: column; background: var(--bg0); position: relative; overflow: hidden; min-width: 0; height: 100%; }
 
 /* WELCOME SCREEN */
@@ -170,7 +173,10 @@ a { color: var(--accent); text-decoration: none; }
 .welcome-inner h2 { font-size: 20px; font-weight: 700; }
 .welcome-inner p { color: var(--text2); font-size: 14px; }
 
-/* CHAT VIEW */
+/* =============================================
+   CHAT VIEW — На ПК это внутри main-area (relative)
+   На мобилке это fixed fullscreen
+   ============================================= */
 .chat-view { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg0); z-index: 10; height: 100%; }
 .chat-header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; padding-top: calc(10px + var(--sat)); background: var(--bg1); border-bottom: 1px solid var(--border); flex-shrink: 0; z-index: 20; }
 .chat-peer-info { display: flex; align-items: center; gap: 10px; flex: 1; cursor: pointer; min-width: 0; }
@@ -196,12 +202,10 @@ a { color: var(--accent); text-decoration: none; }
 .msg.in .msg-bub { background: var(--msg-in); color: var(--text1); border-radius: 18px 18px 18px 4px; }
 .msg-text { white-space: pre-wrap; word-break: break-word; display: inline; }
 
-/* Время и галочки — в одну строку с текстом */
+/* Время и галочки в одну строку */
 .msg-footer { display: inline-flex; align-items: center; gap: 2px; float: right; margin-left: 8px; margin-bottom: -4px; position: relative; bottom: -3px; white-space: nowrap; }
 .msg-time { font-size: 10px; line-height: 1; color: rgba(255,255,255,0.55); }
 .msg.in .msg-time { color: var(--text3); }
-
-/* Галочки — наложены друг на друга */
 .msg-status { font-size: 14px; line-height: 1; display: inline-flex; align-items: center; letter-spacing: -5px; }
 .msg-status.s1 { color: rgba(255,255,255,0.4); }
 .msg-status.s2 { color: rgba(255,255,255,0.65); }
@@ -229,7 +233,7 @@ a { color: var(--accent); text-decoration: none; }
 
 .mobile-only { display: none; }
 
-/* === MOBILE OVERRIDES === */
+/* === MOBILE === */
 @media (max-width: 768px) {
     .sidebar { width: 100%; min-width: 100%; position: absolute; inset: 0; z-index: 100; }
     .main-area { display: none !important; }
@@ -242,7 +246,22 @@ a { color: var(--accent); text-decoration: none; }
     .mob-fab.hide { opacity: 0; pointer-events: none; }
 }
 
-@media (min-width: 769px) { .mob-fab { display: none !important; } }
+/* === DESKTOP: main-area видна, chat-view внутри неё === */
+@media (min-width: 769px) {
+    .mob-fab { display: none !important; }
+
+    .main-area { display: flex !important; }
+
+    .chat-view {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        transform: none;
+        transition: none;
+    }
+    .chat-view.slide-in { transform: none; }
+}
 
 /* === MODALS, TOASTS, PANELS === */
 .modal-overlay { position: fixed; inset: 0; z-index: 400; background: rgba(0,0,0,.6); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; padding: 20px; }
@@ -326,14 +345,21 @@ a { color: var(--accent); text-decoration: none; }
 .mm-btn.yes.danger { background: var(--red); }
 .mm-btn.yes.danger:hover { background: #dc2626; }
 
-/* EMOJI & ATTACH PANEL */
+/* EMOJI & ATTACH PANEL — УМЕНЬШЕННЫЕ СМАЙЛИКИ НА ПК */
 .emoji-panel { background: var(--bg1); border-top: 1px solid var(--border); max-height: 250px; display: flex; flex-direction: column; flex-shrink: 0; }
 .emoji-tab-row { display: flex; padding: 6px 8px; gap: 2px; border-bottom: 1px solid var(--border); overflow-x: auto; }
-.emoji-tab-row button { width: 34px; height: 34px; border-radius: var(--r8); font-size: 18px; background: none; border: none; cursor: pointer; flex-shrink: 0; }
+.emoji-tab-row button { width: 30px; height: 30px; border-radius: var(--r8); font-size: 16px; background: none; border: none; cursor: pointer; flex-shrink: 0; }
 .emoji-tab-row button.on { background: var(--bg4); }
-.emoji-grid-wrap { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; padding: 6px; overflow-y: auto; flex: 1; }
-.emoji-grid-wrap button { width: 100%; aspect-ratio: 1; font-size: 22px; background: none; border: none; cursor: pointer; border-radius: var(--r8); }
+.emoji-grid-wrap { display: grid; grid-template-columns: repeat(10, 1fr); gap: 1px; padding: 6px; overflow-y: auto; flex: 1; }
+.emoji-grid-wrap button { width: 100%; aspect-ratio: 1; font-size: 20px; background: none; border: none; cursor: pointer; border-radius: var(--r8); display: flex; align-items: center; justify-content: center; }
 .emoji-grid-wrap button:hover { background: var(--bg4); }
+
+/* На мобилке смайлики чуть крупнее */
+@media (max-width: 768px) {
+    .emoji-grid-wrap { grid-template-columns: repeat(8, 1fr); }
+    .emoji-grid-wrap button { font-size: 22px; }
+    .emoji-tab-row button { width: 34px; height: 34px; font-size: 18px; }
+}
 
 .attach-panel { position: absolute; bottom: 100%; left: 12px; background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--r16); padding: 12px; display: flex; gap: 12px; z-index: 30; box-shadow: var(--shadow2); }
 .attach-item { display: flex; flex-direction: column; align-items: center; gap: 8px; background: none; border: none; cursor: pointer; color: var(--text1); padding: 8px; }
@@ -381,3 +407,28 @@ a { color: var(--accent); text-decoration: none; }
 .voice-rec-btn:active { transform: scale(.9); }
 .voice-rec-btn.cancel { background: var(--bg4); color: var(--text2); }
 .voice-rec-btn.send-voice { background: var(--grad); color: #fff; }
+
+/* VIDEO MESSAGE (кружок) */
+.msg-video-circle { width: 200px; height: 200px; border-radius: 50%; overflow: hidden; cursor: pointer; flex-shrink: 0; }
+.msg-video-circle video { width: 100%; height: 100%; object-fit: cover; }
+.msg-video { max-width: 280px; border-radius: 12px; cursor: pointer; display: block; }
+.msg.out .msg-video { border-radius: 18px 18px 4px 18px; }
+.msg.in .msg-video { border-radius: 18px 18px 18px 4px; }
+
+/* CALL OVERLAY */
+.call-overlay { position: fixed; inset: 0; z-index: 5000; background: var(--bg0); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; }
+.call-avatar { width: 120px; height: 120px; border-radius: 50%; background: var(--grad); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 48px; font-weight: 800; animation: callPulse 2s ease-in-out infinite; }
+@keyframes callPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(34,211,174,.4); } 50% { box-shadow: 0 0 0 30px rgba(34,211,174,0); } }
+.call-name { font-size: 24px; font-weight: 700; color: var(--text1); }
+.call-status { font-size: 14px; color: var(--text2); }
+.call-timer { font-size: 18px; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+.call-actions { display: flex; gap: 20px; margin-top: 30px; }
+.call-btn { width: 64px; height: 64px; border-radius: 50%; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 24px; transition: transform .1s; }
+.call-btn:active { transform: scale(.9); }
+.call-btn.end { background: var(--red); color: #fff; }
+.call-btn.mute { background: var(--bg4); color: var(--text1); }
+.call-btn.accept { background: var(--green); color: #fff; }
+.call-videos { position: absolute; inset: 0; }
+.call-remote-video { width: 100%; height: 100%; object-fit: cover; }
+.call-local-video { position: absolute; bottom: 100px; right: 20px; width: 120px; height: 160px; border-radius: 12px; overflow: hidden; border: 2px solid var(--accent); }
+.call-local-video video { width: 100%; height: 100%; object-fit: cover; }
