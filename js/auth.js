@@ -5,22 +5,14 @@ const Auth = (() => {
     const profile = () => _p;
 
     const init = () => new Promise(ok => {
-        // Обрабатываем редирект от Google
-        auth.getRedirectResult().then(result => {
-            if (result?.user) {
-                // Успешный редирект — setup уже вызовется через onAuthStateChanged
-            }
-        }).catch(e => {
-            console.warn('Redirect result error:', e);
-        });
-
         auth.onAuthStateChanged(async u => {
             if (u) {
                 _u = u;
                 await setup(u);
                 ok(true);
             } else {
-                _u = null; _p = null;
+                _u = null;
+                _p = null;
                 ok(false);
             }
         });
@@ -31,7 +23,7 @@ const Auth = (() => {
             const doc = await db.collection('users').doc(u.uid).get();
             if (!doc.exists) {
                 _p = {
-                    name: u.displayName || u.email.split('@')[0],
+                    name: u.displayName || u.email?.split('@')[0] || 'User',
                     username: '',
                     email: u.email || '',
                     bio: '',
@@ -48,20 +40,18 @@ const Auth = (() => {
                 }).catch(() => {});
             }
 
-            // Генерируем ключи (PChatCrypto не конфликтует с window.crypto)
             try {
                 const keys = await PChatCrypto.getOrCreateKeyPair(u.uid);
                 await db.collection('users').doc(u.uid).update({
                     publicKey: keys.publicKeyB64
                 }).catch(() => {});
             } catch (e) {
-                console.warn('Key generation failed:', e);
+                console.warn('Keys failed:', e);
             }
 
             presence(u.uid);
         } catch (e) {
             console.error('Setup error:', e);
-            // Если не удалось загрузить профиль — создаём минимальный
             if (!_p) {
                 _p = {
                     name: u.displayName || u.email?.split('@')[0] || 'User',
@@ -99,12 +89,10 @@ const Auth = (() => {
         };
         await db.collection('users').doc(c.user.uid).set(_p);
         await db.collection('usernames').doc(username.toLowerCase()).set({ uid: c.user.uid });
-
         try {
             const keys = await PChatCrypto.getOrCreateKeyPair(c.user.uid);
             await db.collection('users').doc(c.user.uid).update({ publicKey: keys.publicKeyB64 });
-        } catch (e) { console.warn('Keys failed:', e); }
-
+        } catch (e) {}
         presence(c.user.uid);
         return c.user;
     };
@@ -116,12 +104,31 @@ const Auth = (() => {
         return c.user;
     };
 
-    // Используем redirect вместо popup — избегаем COOP ошибки
     const google = async () => {
         const provider = new firebase.auth.GoogleAuthProvider();
+        provider.addScope('email');
+        provider.addScope('profile');
         provider.setCustomParameters({ prompt: 'select_account' });
-        await auth.signInWithRedirect(provider);
-        // Страница перезагрузится, результат поймаем в init() через getRedirectResult
+
+        try {
+            // Сначала пробуем popup
+            const c = await auth.signInWithPopup(provider);
+            _u = c.user;
+            await setup(c.user);
+            return c.user;
+        } catch (e) {
+            // Если popup заблокирован (COOP) — используем redirect
+            if (
+                e.code === 'auth/popup-blocked' ||
+                e.code === 'auth/popup-closed-by-user' ||
+                e.code === 'auth/cancelled-popup-request' ||
+                e.message?.includes('Cross-Origin')
+            ) {
+                await auth.signInWithRedirect(provider);
+                return null; // страница перезагрузится
+            }
+            throw e;
+        }
     };
 
     const logout = async () => {
@@ -133,7 +140,8 @@ const Auth = (() => {
         }
         PChatCrypto.clearCache();
         await auth.signOut();
-        _u = null; _p = null;
+        _u = null;
+        _p = null;
     };
 
     const update = async data => {
@@ -161,9 +169,10 @@ const Auth = (() => {
         'auth/user-not-found': 'Пользователь не найден',
         'auth/wrong-password': 'Неверный пароль',
         'auth/invalid-credential': 'Неверный email или пароль',
-        'auth/weak-password': 'Слишком простой пароль (мин. 6 символов)',
+        'auth/weak-password': 'Пароль минимум 6 символов',
         'auth/too-many-requests': 'Слишком много попыток. Подождите.',
         'auth/network-request-failed': 'Ошибка сети',
+        'auth/popup-blocked': 'Popup заблокирован. Разрешите всплывающие окна.',
         'auth/popup-closed-by-user': 'Окно закрыто',
         'auth/cancelled-popup-request': 'Отменено',
     }[e.code] || e.message || 'Неизвестная ошибка');
