@@ -82,16 +82,20 @@ const Voice = (() => {
 
     const sendVoice = async () => {
         const result = await stop();
+
         if (!result || !result.blob || result.duration < 1) {
-            UI.toast('⚠ Слишком короткое');
+            UI.toast('⚠ Слишком короткое сообщение');
             return;
         }
-        if (!Chat.cid()) return;
+
+        if (!Chat.cid()) {
+            UI.toast('❌ Чат не выбран');
+            return;
+        }
 
         UI.toast('📤 Загрузка...');
 
         try {
-            // Создаём File из Blob
             const ext = result.mimeType.includes('mp4') ? 'mp4' : 'webm';
             const file = new File(
                 [result.blob],
@@ -99,9 +103,9 @@ const Voice = (() => {
                 { type: result.mimeType }
             );
 
-            // Используем Storage.upload() — НЕ Firebase Storage!
+            // Используем Storage.upload — НЕ Firebase Storage
             const uploaded = await Storage.upload(file, pct => {
-                if (pct > 0 && pct < 100) UI.toast(`📤 Загрузка ${pct}%`);
+                if (pct > 0 && pct < 100) UI.toast(`📤 ${pct}%`);
             });
 
             const waveform = Array.from(
@@ -151,19 +155,20 @@ const Voice = (() => {
 
         const setPlay = () => {
             playBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>`;
+            playBtn.dataset.playing = 'false';
         };
         const setPause = () => {
             playBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+            playBtn.dataset.playing = 'true';
         };
 
         playBtn.addEventListener('click', () => {
             const url = playBtn.dataset.url;
-            if (!url) return;
+            if (!url) { UI.toast('❌ Файл недоступен'); return; }
 
             if (playBtn.dataset.playing === 'true' && audio) {
                 audio.pause();
                 audio.currentTime = 0;
-                playBtn.dataset.playing = 'false';
                 setPlay();
                 return;
             }
@@ -175,22 +180,12 @@ const Voice = (() => {
                 console.error('Audio play error:', e);
                 UI.toast('❌ Не удалось воспроизвести');
                 setPlay();
-                playBtn.dataset.playing = 'false';
             });
 
-            playBtn.dataset.playing = 'true';
             setPause();
 
-            audio.onended = () => {
-                playBtn.dataset.playing = 'false';
-                setPlay();
-            };
-
-            audio.onerror = () => {
-                playBtn.dataset.playing = 'false';
-                setPlay();
-                UI.toast('❌ Ошибка воспроизведения');
-            };
+            audio.onended = () => setPlay();
+            audio.onerror = () => { setPlay(); UI.toast('❌ Ошибка воспроизведения'); };
         });
 
         return container;
