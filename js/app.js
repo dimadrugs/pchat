@@ -8,7 +8,7 @@ const onclick = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
 let _chatUnsub = null;
 let activeChatId = null;
 
-/* ---- Boot ---- */
+/* BOOT */
 const splash = $('splash');
 let logged = false;
 try {
@@ -34,6 +34,7 @@ function showAuth() {
     $('auth')?.classList.remove('hidden');
     $('app')?.classList.add('hidden');
     $('onboarding')?.classList.add('hidden');
+    $('chat-view')?.classList.add('hidden');
 }
 
 function showOnboarding() {
@@ -53,7 +54,7 @@ function startApp() {
     Notif.init();
     Contacts.init();
     UI.initEmojiTabs();
-    // Инициализируем звонки
+    // Инициализируем WebRTC звонки
     const uid = Auth.user()?.uid;
     if (uid) Calls.init(uid);
 }
@@ -81,15 +82,14 @@ onclick('ob-save', async () => {
     if (!name) return UI.toast('Введите имя');
     if (!username || username.length < 3) return UI.toast('Юзернейм минимум 3 символа');
     if (!/^[a-z0-9_]+$/.test(username)) return UI.toast('Только буквы, цифры и _');
-    const ok = await Auth.checkUsername(username);
-    if (!ok) return UI.toast('Этот юзернейм занят');
+    if (!(await Auth.checkUsername(username))) return UI.toast('Этот юзернейм занят');
     const btn = $('ob-save');
     if (btn) { btn.disabled = true; btn.textContent = 'Сохранение...'; }
     try { await Auth.saveOnboarding(name, username); startApp(); }
     catch (e) { UI.toast('Ошибка: ' + e.message); if (btn) { btn.disabled = false; btn.textContent = 'Сохранить и войти'; } }
 });
 
-/* AUTH FORMS */
+/* AUTH */
 onclick('to-reg', e => { e?.preventDefault(); $('form-login')?.classList.add('hidden'); $('form-reg')?.classList.remove('hidden'); });
 onclick('to-li', e => { e?.preventDefault(); $('form-reg')?.classList.add('hidden'); $('form-login')?.classList.remove('hidden'); });
 
@@ -201,7 +201,7 @@ function loadChats() {
             });
         }, err => {
             console.error('Chat list:', err);
-            if (err.code === 'failed-precondition') UI.toast('⏳ Индекс создаётся, подождите...');
+            if (err.code === 'failed-precondition') UI.toast('⏳ Создаётся индекс, подождите...');
         });
 }
 
@@ -242,22 +242,38 @@ function makeChatRow(cid, c) {
             const pdata = pdoc.exists ? pdoc.data() : { name, email: c.emails?.[pid] || '' };
             Chat.open(cid, pid, pdata);
             UI.showChat();
-        } catch (e) { UI.toast('Ошибка открытия чата'); }
+        } catch (e) {
+            console.error('Open chat error:', e);
+            UI.toast('Ошибка открытия чата');
+        }
     };
     return el;
 }
 
 /* NAV */
-onclick('mob-fab', () => { $('new-chat-modal')?.classList.remove('hidden'); setTimeout(() => $('user-search-input')?.focus(), 300); });
-onclick('new-chat-btn', () => { $('new-chat-modal')?.classList.remove('hidden'); setTimeout(() => $('user-search-input')?.focus(), 300); });
+onclick('mob-fab', () => {
+    $('new-chat-modal')?.classList.remove('hidden');
+    setTimeout(() => $('user-search-input')?.focus(), 300);
+});
+onclick('new-chat-btn', () => {
+    $('new-chat-modal')?.classList.remove('hidden');
+    setTimeout(() => $('user-search-input')?.focus(), 300);
+});
 onclick('new-chat-close', () => {
     $('new-chat-modal')?.classList.add('hidden');
     const inp = $('user-search-input'); if (inp) inp.value = '';
-    const box = $('user-search-results'); if (box) box.innerHTML = '<div class="search-hint"><p>Введите @юзернейм для поиска</p></div>';
+    const box = $('user-search-results');
+    if (box) box.innerHTML = '<div class="search-hint"><p>Введите @юзернейм для поиска</p></div>';
 });
-$('new-chat-modal')?.addEventListener('click', e => { if (e.target === e.currentTarget) { e.currentTarget.classList.add('hidden'); } });
+$('new-chat-modal')?.addEventListener('click', e => { if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden'); });
 
-onclick('mobile-back', () => { Chat.close(); UI.hideChat(); activeChatId = null; document.querySelectorAll('.chat-row').forEach(r => r.classList.remove('active')); });
+onclick('mobile-back', () => {
+    Chat.close();
+    UI.hideChat();
+    activeChatId = null;
+    document.querySelectorAll('.chat-row').forEach(r => r.classList.remove('active'));
+});
+
 onclick('sf-settings-btn', () => { refreshSidebar(); $('settings-modal')?.classList.remove('hidden'); });
 onclick('sf-user-btn', () => { refreshSidebar(); $('settings-modal')?.classList.remove('hidden'); });
 onclick('settings-close', () => $('settings-modal')?.classList.add('hidden'));
@@ -275,7 +291,11 @@ on('chat-search', 'input', e => {
 /* MESSAGE INPUT */
 const msgInp = $('msg-input');
 if (msgInp) {
-    msgInp.addEventListener('input', () => { UI.autoResize(msgInp); UI.updateSend(); Chat.handleTyping(); });
+    msgInp.addEventListener('input', () => {
+        UI.autoResize(msgInp);
+        UI.updateSend();
+        Chat.handleTyping();
+    });
     msgInp.addEventListener('keydown', e => {
         if (e.key === 'Enter' && !e.shiftKey && window.innerWidth > 768) {
             e.preventDefault();
@@ -289,10 +309,16 @@ onclick('send-btn', () => {
 });
 
 /* EMOJI */
-onclick('emoji-btn', () => { $('emoji-panel')?.classList.toggle('hidden'); $('attach-panel')?.classList.add('hidden'); });
+onclick('emoji-btn', () => {
+    $('emoji-panel')?.classList.toggle('hidden');
+    $('attach-panel')?.classList.add('hidden');
+});
 
 /* ATTACH */
-onclick('attach-btn', () => { $('attach-panel')?.classList.toggle('hidden'); $('emoji-panel')?.classList.add('hidden'); });
+onclick('attach-btn', () => {
+    $('attach-panel')?.classList.toggle('hidden');
+    $('emoji-panel')?.classList.add('hidden');
+});
 
 document.querySelectorAll('.attach-item').forEach(b => {
     b.onclick = () => {
@@ -340,8 +366,7 @@ onclick('call-cam-btn', () => Calls.toggleCam());
 /* CTX */
 document.querySelectorAll('.ctx-btn').forEach(b => {
     b.onclick = () => {
-        const m = $('ctx');
-        if (!m) return;
+        const m = $('ctx'); if (!m) return;
         const action = b.dataset.a;
         const mid = m.dataset.mid;
         const txt = m.dataset.txt;
@@ -377,7 +402,8 @@ onclick('edit-username-btn', async () => {
     if (clean !== current && !(await Auth.checkUsername(clean))) return UI.toast('Юзернейм занят');
     await Auth.update({ username: clean });
     await db.collection('usernames').doc(clean).set({ uid: Auth.user().uid });
-    refreshSidebar(); UI.toast('✅ Юзернейм обновлён');
+    refreshSidebar();
+    UI.toast('✅ Юзернейм обновлён');
 });
 
 onclick('edit-bio-btn', async () => {
@@ -408,8 +434,15 @@ onclick('logout-btn', async () => {
     }
 });
 
+/* BACK */
 window.addEventListener('popstate', () => {
-    if (!$('chat-view')?.classList.contains('hidden')) { Chat.close(); UI.hideChat(); activeChatId = null; }
+    const cv = $('chat-view');
+    if (cv && !cv.classList.contains('hidden') && window.innerWidth <= 768) {
+        Chat.close();
+        UI.hideChat();
+        activeChatId = null;
+        document.querySelectorAll('.chat-row').forEach(r => r.classList.remove('active'));
+    }
 });
 
 if ('visualViewport' in window) {
@@ -421,5 +454,5 @@ if ('visualViewport' in window) {
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 
-console.log('%c PCHAT Ready', 'color:#22d3ae;font-weight:800;font-size:16px');
+console.log('%c PCHAT Ready ✓', 'color:#22d3ae;font-weight:800;font-size:16px');
 })();
